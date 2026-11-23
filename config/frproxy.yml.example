@@ -1,0 +1,5 @@
+# Edit and save: changes apply within seconds.
+
+# hostname -> where to send traffic: a port, host:port or a URL.
+tunnels:
+  myapp.example.com: 3000

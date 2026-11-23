@@ -1,0 +1,6 @@
+.env
+*.bak
+*.tmp
+*.lock
+.secrets.yml
+config/frproxy.yml

@@ -1,0 +1,46 @@
+#!/bin/sh
+cd "$(dirname "$(readlink -f "$0")")"
+here=$(pwd)
+
+# ./frproxy install: link this checkout into ~/.local/bin so `frproxy` works from any directory.
+if [ "$1" = install ] && [ $# = 1 ]; then
+  bin=${XDG_BIN_HOME:-$HOME/.local/bin}
+  mkdir -p "$bin" && ln -sf "$here/frproxy" "$bin/frproxy" && echo "linked $bin/frproxy -> $here/frproxy"
+  case ":$PATH:" in *":$bin:"*) ;; *) echo "$bin is not in your PATH; add it:"
+    echo "  fish:      fish_add_path $bin"
+    echo "  bash/zsh:  echo 'export PATH=\"$bin:\$PATH\"' >> ~/.profile" ;; esac
+  exit
+fi
+# Works with docker compose, podman-compose or `podman compose` (rootless included); FRPROXY_COMPOSE overrides.
+if [ -n "$FRPROXY_COMPOSE" ]; then compose=$FRPROXY_COMPOSE
+elif docker compose version >/dev/null 2>&1; then compose="docker compose"
+elif command -v podman-compose >/dev/null; then compose=podman-compose
+elif podman compose version >/dev/null 2>&1; then compose="podman compose"
+else echo "frproxy: need docker compose or podman-compose" >&2; exit 1; fi
+# With a tty (no -T) Ctrl-C reaches the container itself instead of orphaning it; -T only when piped.
+if [ -t 0 ]; then notty=; else notty=-T; fi
+# Reuse the background container when it is up (`exec` is much faster than creating a container per command);
+# otherwise fall back to a throwaway one. ./src is bind-mounted, so exec still runs the current code.
+if $compose exec -T frproxy true >/dev/null 2>&1; then run="$compose exec"; else run="$compose run --rm"; fi
+daemon() { $run $notty frproxy bun /app/daemon.ts "$@"; }
+
+# The foreground loop (`run`) belongs to the background container: started from here, Ctrl-C would leave it running
+# next to the real daemon. So `run` means apply here.
+# ./frproxy buy <domain>: the browser opens from here (the container has none); the container checks the price and waits.
+if [ "$1" = buy ] && [ $# = 2 ]; then
+  # -T: no pty, so the captured URL has no carriage return.
+  if url=$($run -T frproxy bun /app/daemon.ts buyurl "$2" 2>/dev/null); then
+    if command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1 &
+    elif command -v open >/dev/null; then open "$url" >/dev/null 2>&1 &
+    fi
+  fi
+  exec $run frproxy bun /app/daemon.ts buy "$2"
+fi
+
+[ $# = 0 ] && set -- help
+if [ $# = 1 ] && { [ "$1" = apply ] || [ "$1" = run ]; }; then
+  # --force-recreate: ./src is bind-mounted, so without it the daemon would keep running the code it started with.
+  daemon apply && $compose up -d --force-recreate frproxy && $compose up -d && echo "frproxy: running in the background (./frproxy status to check)"
+else
+  daemon "$@"
+fi

@@ -1,0 +1,32 @@
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 5m, max-file: "3"}
+
+services:
+  frproxy:
+    image: docker.io/oven/bun:1
+    user: root
+    restart: unless-stopped
+    logging: *logging
+    command: ["bun", "/app/daemon.ts"]
+    volumes:
+      - state:/state
+      - ./src:/app:ro,z
+      - ./config:/config:z
+      - type: bind # names this machine's tunnel (frproxy-<hostname>); `name:` in the config overrides it
+        source: /etc/hostname
+        target: /host/hostname
+        read_only: true
+        bind: {create_host_path: false}
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    network_mode: host
+    logging: *logging
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/state/token"]
+    volumes:
+      - state:/state:ro
+
+volumes:
+  state:
