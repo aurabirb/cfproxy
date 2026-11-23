@@ -131,7 +131,7 @@ export async function printUrl([, name]: string[]) {
   let tunnel: QuickState | undefined;
   for (const until = Date.now() + 30_000; !tunnel?.url && Date.now() < until; await Bun.sleep(1000))
     tunnel = (await quickStatus()).find((t) => t.name === name.toLowerCase());
-  if (!tunnel?.url) return console.log(`quick tunnel ${name}: no URL yet (${tunnel?.state ?? "not in the config"}); ./cfproxy status shows it once it is up`);
+  if (!tunnel?.url) return console.log(`quick tunnel ${name}: no URL yet, ${tunnel?.state ?? "not in the config"}; ./cfproxy status shows it once it is up`);
   console.log(`${tunnel.url} -> ${tunnel.service}   (a new URL each time the tunnel restarts; ./cfproxy status shows it)`);
   if (tunnel.service.startsWith("ssh://")) console.log(`on a client: ./cfproxy ssh ${name}=<user>@${new URL(tunnel.url).hostname.replace(/\.trycloudflare\.com$/, "")}`);
 }

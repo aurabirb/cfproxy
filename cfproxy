@@ -47,14 +47,28 @@ survive_reboot() {
   } || echo "cfproxy: linger not enabled; the tunnel will only start after you log in" >&2
 }
 
+# This checkout's containers (running ones; with -a all), as name=service.
+containers() {
+  $engine ps "$@" --filter "label=com.docker.compose.project.working_dir=$PWD" --format '{{.Names}}={{.Label "com.docker.compose.service"}}'
+}
+
+# TryCloudflare refuses new quick tunnels for a while after many (HTTP 429). cloudflared then exits, and its restart
+# asks again at once, which keeps the limit going: such containers are stopped until the next add or apply.
+stop_rate_limited() {
+  for c in $(containers); do
+    case "$c" in *=quick-*) $engine logs --tail 3 "${c%%=*}" 2>&1 | grep -q 'failed with status 429' || continue ;; *) continue ;; esac
+    $engine stop "${c%%=*}" >/dev/null &&
+      echo "cfproxy: TryCloudflare refuses new tunnels from this machine for now (HTTP 429): stopped ${c#*=}; ./cfproxy apply retries" >&2
+  done
+}
+
 # Runs the stack in the background, also after reboots, with the cloudflared containers the config asks for now.
 # The daemon writes them to $tunnels.new. This checkout's cloudflared containers that are not in it are removed, found
 # through the engine rather than the old file (which may be stale), since podman-compose ignores `up --remove-orphans`.
 # Compose recreates only the containers whose definition changed, so the other quick tunnels keep their URLs.
 up() {
   daemon compose || return
-  for c in $($engine ps -a --filter "label=com.docker.compose.project.working_dir=$PWD" \
-    --format '{{.Names}}={{.Label "com.docker.compose.service"}}'); do
+  for c in $(containers -a); do
     case "$c" in *=quick-* | *=cloudflared) grep -qx "  ${c#*=}:" "$tunnels.new" || $engine rm -f "${c%%=*}" >/dev/null || return ;; esac
   done
   mv "$tunnels.new" "$tunnels" && $compose up -d && survive_reboot
@@ -88,7 +102,8 @@ case "$#:$1" in
   # For machines that serve tunnels; a client only needs ./cfproxy ssh.
   1:install) daemon install && lock && start ;;
   # The containers change right away; then a new quick tunnel's URL is printed once Cloudflare assigns it.
-  *:add) lock && daemon "$@" && up && shift && daemon url "$@" ;;
+  *:add) lock && daemon "$@" && up && shift && daemon url "$@"; stop_rate_limited ;;
+  1:status) daemon status; stop_rate_limited ;;
   *:rm) lock && daemon "$@" && up ;;
   # The container sets up ~/.ssh/config for the destination; ssh itself runs here, from where cfproxy was called.
   # alias=[user@]host: once the container has set up the alias, ssh connects to the alias.
