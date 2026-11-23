@@ -4,3 +4,4 @@
 *.lock
 .secrets.yml
 config/cfproxy.yml
+config/compose.tunnels.yaml*

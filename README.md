@@ -1,7 +1,7 @@
 # cfproxy
 
-Exposes local ports (like ngrok) using free Cloudflare tunnels and your domain name. No public IP or open ports needed.
-Just starts two containers with cloudflared and bun.
+Exposes local ports (like ngrok) using free Cloudflare tunnels and your domain name, or without a domain through
+quick tunnels. No public IP or open ports needed. Just runs cloudflared and bun in containers.
 
 ## Example
 
@@ -14,6 +14,8 @@ git clone https://github.com/aurabirb/cfproxy.git && cd cfproxy
 ./cfproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
 
 ./cfproxy ssh you@box.example.com       # run once on a client to set up ssh access through cloudflared
+
+./cfproxy add 3000 myapp                # no domain or token: prints https://<random words>.trycloudflare.com
 ```
 
 Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
@@ -36,13 +38,14 @@ Create a Cloudflare API token:
 
 ## Configuration
 
-`config/cfproxy.yml` (written by `add`/`rm`; hand edits apply within seconds too):
+`config/cfproxy.yml` (written by `add`/`rm`; hand edits apply within seconds too, to quick tunnels after `./cfproxy apply`):
 
 ```yaml
 tunnels:
   app.example.com: 3000                 # https://app.example.com -> localhost:3000
   api.example.dev: 10.0.0.5:8080        # any host:port
   box.example.com: 22                   # port 22 is SSH (ssh://); a full URL is used as written
+  myapp: 3000                           # no dot: quick tunnel at a random https://....trycloudflare.com
 name: box                               # optional: the tunnel is cfproxy-box (default: cfproxy-<hostname>)
 account_id: 0123abcd                    # optional: only if the token cannot read your account ID
 ```
@@ -53,6 +56,18 @@ account_id: 0123abcd                    # optional: only if the token cannot rea
 cloudflare:
   api_token: <token>
 ```
+
+## Quick tunnels (no domain)
+
+A name without a dot (`./cfproxy add 3000 myapp`, or just `./cfproxy add 3000`, named `port-3000`) is a
+[quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/):
+no domain, no Cloudflare account, no token. `add` prints its URL once Cloudflare assigns it; `status` shows it later.
+
+- The URL is random and changes whenever the tunnel restarts (a reboot, a crash, a changed port). Other quick tunnels
+  keep theirs when you add or remove one.
+- Cloudflare offers them for testing: no uptime guarantee, at most 200 requests in flight, no server-sent events.
+- SSH works with `cloudflared access ssh --hostname <its hostname>` on the client, but `~/.ssh/config` is left alone
+  since the hostname changes.
 
 ## Several machines
 
@@ -72,10 +87,11 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 
 - `./cfproxy install`: link `cfproxy` into ~/.local/bin, ask for the Cloudflare API token if there is none, then start like `apply`
 - `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`)
-- `./cfproxy rm app.example.com`: stop exposing it
-- `./cfproxy status`: zone, tunnel and per-tunnel DNS/ingress state, and whether ssh to each SSH tunnel works from here
+- `./cfproxy add :8080 [name]`: the same through a quick tunnel, printing its URL
+- `./cfproxy rm app.example.com`: stop exposing it (or `rm name` for a quick tunnel)
+- `./cfproxy status`: zone, tunnel and per-tunnel DNS/ingress state, quick tunnel URLs, and whether ssh to each SSH tunnel works from here
 - `./cfproxy plan`: show what `apply` would change, change nothing
-- `./cfproxy apply`: sync Cloudflare, then start (or refresh) the tunnel in the background; aborts on any error
+- `./cfproxy apply`: sync Cloudflare, then start (or refresh) the tunnels in the background; aborts on any error
 - `./cfproxy ssh [ssh args]`: set up plain ssh to a tunnel on this machine, then run ssh with the args
 - `./cfproxy buy <domain>`: open Cloudflare Registrar in your browser, wait until the domain is in your account, then exit 0 (so `./cfproxy buy x.com && ./cfproxy add 3000 app.x.com` works). Giving the token Registrar read permission also shows availability and price first
 - `./cfproxy help`
@@ -89,6 +105,12 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 - A domain not on Cloudflare yet is added as a zone; `status` prints the nameservers to set at your registrar.
 - The daemon (`src/daemon.ts`) syncs Cloudflare whenever `config/cfproxy.yml` or `config/.secrets.yml` changes, and every
   five minutes otherwise. It hands `cloudflared` the tunnel token through a shared volume.
+- The `cloudflared` containers (one for the named tunnel when there is a token, one per quick tunnel) are generated
+  from the `x-cloudflared` block of `compose.yaml` into `config/compose.tunnels.yaml` (`src/quick.ts`), which
+  `./cfproxy` passes to compose too. `add`, `rm` and `apply` rewrite it, remove the containers that are gone and start
+  the rest; compose recreates only the ones that changed. The daemon cannot run compose, so it only notes a hand edit
+  of a quick tunnel until `./cfproxy apply`. It reads each quick tunnel's URL from its metrics server on 127.0.0.1,
+  which is why the daemon also runs on the host network.
 - Cloudflare's free certificate covers one label below the zone (`a.example.com`, not `a.b.example.com`).
 - `cfproxy ssh` downloads `cloudflared` into `~/.local/bin` and adds the host with `cloudflared` as ProxyCommand. `add`
   and `apply` do the same for this machine's SSH tunnels, using the `cloudflared` release that `compose.yaml` pins;

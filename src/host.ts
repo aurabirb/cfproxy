@@ -2,7 +2,7 @@
 // path, so paths written here are valid on the host), ~/.ssh and compose.yaml. The ./cfproxy script passes the rest in
 // CFPROXY_* variables. Keeping the stack up across reboots is systemd's business and stays in the script.
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { API, SECRETS_PATH, fail, loadConfig, loadSecrets, serviceUrl } from "./config";
+import { API, SECRETS_PATH, fail, loadConfig, loadSecrets, namedTunnels, serviceUrl } from "./config";
 
 const SSH_CONFIG = "/host/ssh/config";
 const env = (name: string) => process.env[name] || fail(`${name} is not set: run cfproxy through the ./cfproxy script`);
@@ -49,10 +49,10 @@ function askHidden(question: string) {
 export async function askToken() {
   if (loadSecrets().apiToken) return true;
   if (!process.stdin.isTTY) return console.log("no Cloudflare API token yet: run ./cfproxy install in a terminal to enter it"), false;
-  console.log(`\nServing tunnels from this machine needs a Cloudflare API token (machines that only use cfproxy ssh do not).${TOKEN_STEPS}`);
+  console.log(`\nServing your own domain from this machine needs a Cloudflare API token (quick tunnels and cfproxy ssh do not).${TOKEN_STEPS}`);
   for (;;) {
     const token = askHidden("Paste the token (hidden; Enter to skip):");
-    if (!token) return console.log("skipped; ./cfproxy install asks again"), false;
+    if (!token) return console.log("skipped; ./cfproxy install asks again. Without one: ./cfproxy add 3000 myapp gives a quick tunnel"), false;
     const accepted = /^[\w-]+$/.test(token) && (await fetch(`${API}/zones?per_page=1`, { headers: { Authorization: `Bearer ${token}` } })).ok;
     if (!accepted) {
       console.log("Cloudflare rejected that token (or it cannot read zones); try again");
@@ -87,7 +87,8 @@ export async function installCloudflared() {
 
 // --- plain `ssh <host>` from this machine ---
 
-export const sshHosts = () => Object.entries(loadConfig().tunnels).filter(([, addr]) => serviceUrl(addr).startsWith("ssh://")).map(([host]) => host);
+// Quick tunnels are left out: their hostname changes on every restart, so an ~/.ssh/config entry would go stale.
+export const sshHosts = () => namedTunnels(loadConfig().tunnels).filter(([, addr]) => serviceUrl(addr).startsWith("ssh://")).map(([host]) => host);
 
 // ssh patterns: * and ?, ! negates. A host matches if some plain pattern does and no negated one does.
 const glob = (pattern: string) => new RegExp(`^${pattern.replace(/[.+^$(){}|[\]\\]/g, "\\$&").replaceAll("*", ".*").replaceAll("?", ".")}$`, "i");

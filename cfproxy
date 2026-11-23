@@ -14,6 +14,10 @@ elif docker compose version >/dev/null 2>&1; then compose="docker compose"
 elif command -v podman-compose >/dev/null; then compose=podman-compose
 elif podman compose version >/dev/null 2>&1; then compose="podman compose"
 else echo "cfproxy: need docker compose or podman-compose" >&2; exit 1; fi
+# The cloudflared containers live in a generated file next to compose.yaml (see up below); compose needs it to exist.
+tunnels=config/compose.tunnels.yaml
+[ -f "$tunnels" ] || printf 'services: {}\n' >"$tunnels" || exit
+compose="$compose -f compose.yaml -f $tunnels"
 # With a tty (no -T) Ctrl-C reaches the container itself instead of orphaning it; -T only when piped.
 if [ -t 0 ]; then notty=; else notty=-T; fi
 # Reuse the background container when it is up (`exec` is much faster than creating a container per command);
@@ -37,10 +41,22 @@ survive_reboot() {
   } || echo "cfproxy: linger not enabled; the tunnel will only start after you log in" >&2
 }
 
-# Sync Cloudflare, then run the stack in the background, also after reboots.
+# Runs the stack in the background, also after reboots, with the cloudflared containers the config asks for now.
+# The daemon writes them to $tunnels.new; the services that are gone are removed explicitly, since podman-compose
+# ignores `up --remove-orphans`. Compose recreates only the containers whose definition changed, so the other quick
+# tunnels keep their URLs.
+services() { sed -n 's/^  \([a-z0-9-]*\):$/\1/p' "$1"; }
+up() {
+  daemon compose || return
+  gone=$(services "$tunnels" | grep -vxF "$(services "$tunnels.new")")
+  if [ -n "$gone" ]; then $compose down $gone || return; fi
+  mv "$tunnels.new" "$tunnels" && $compose up -d && survive_reboot
+}
+
+# Sync Cloudflare, then run the stack.
 # --force-recreate: ./src is bind-mounted, so without it the daemon would keep running the code it started with.
 start() {
-  daemon apply && $compose up -d --force-recreate cfproxy && $compose up -d && survive_reboot &&
+  daemon apply && up && $compose up -d --force-recreate cfproxy &&
     echo "cfproxy: running in the background, restarts after reboot (./cfproxy status to check)"
 }
 
@@ -52,8 +68,11 @@ case "$#:$1" in
   # The foreground loop (`run`) belongs to the background container: started from here, Ctrl-C would leave it
   # running next to the real daemon. So `run` means apply here.
   1:apply | 1:run) start ;;
-  # Without a token (skipped: a machine that only uses cfproxy ssh) there is nothing to serve, so nothing to start.
-  1:install) daemon install && if grep -qs '^ *api_token: *[^ ]' config/.secrets.yml; then start; fi ;;
+  # Without a token or a quick tunnel (a machine that only uses cfproxy ssh) there is nothing to serve or start.
+  1:install) daemon install && if daemon serves; then start; fi ;;
+  # The containers change right away; then a new quick tunnel's URL is printed once Cloudflare assigns it.
+  *:add) daemon "$@" && up && shift && daemon url "$@" ;;
+  *:rm) daemon "$@" && up ;;
   # The container sets up ~/.ssh/config for the destination; ssh itself runs here, from where cfproxy was called.
   *:ssh) daemon "$@" && shift && cd "$caller" && exec ssh "$@" ;;
   # The browser opens from here (the container has none); the container checks the price and waits.

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { API, CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecrets, clientHints, rm, serviceUrl, tunnelName, type Config } from "./config";
+import { API, CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecrets, clientHints, namedTunnels, rm, serviceUrl, tunnelName, type Config } from "./config";
+import * as quick from "./quick";
 import { TOKEN_STEPS, askToken, link, setupSsh, sshDestination, sshHosts, sshProblems } from "./host";
 
 const TOKEN_FILE = "/state/token";
@@ -68,7 +69,7 @@ async function observe({ tunnels, name, accountId }: Config) {
   const account = await findAccount(zones, accountId);
   const ownName = tunnelName(name);
 
-  const wanted = Object.entries(tunnels).map(([hostname, addr]) => {
+  const wanted = namedTunnels(tunnels).map(([hostname, addr]) => {
     const known = [...zones.keys()].filter((name) => hostname.endsWith(`.${name}`)).sort((a, b) => b.length - a.length)[0];
     const zone = known ?? hostname.split(".").slice(-2).join(".");
     if (hostname.slice(0, -zone.length - 1).includes(".")) fail(`${hostname}: must be one label below its zone ${zone} (Cloudflare's free certificate covers one level)`);
@@ -96,8 +97,13 @@ const ingressKey = (rules: any[]) => JSON.stringify(rules.map((r) => [r.hostname
 
 // --- making Cloudflare match the config ---
 
+// Without a token and without hostnames there is nothing on Cloudflare to sync: quick tunnels need no account.
+// With a token it still runs, so removing the last hostname cleans up its DNS record and ingress rule.
+const usesCloudflare = (config: Config) => !!loadSecrets().apiToken || namedTunnels(config.tunnels).length > 0;
+
 // With apply=false only prints what would change. Returns whether a zone still needs its nameservers set.
 async function reconcile(config: Config, apply: boolean) {
+  if (!usesCloudflare(config)) return false;
   const act = makeAct(apply);
   let state = await observe(config);
 
@@ -160,6 +166,15 @@ async function syncRecords({ hosts, zones, records, tunnel }: State, act: Act) {
 }
 
 async function status(config: Config) {
+  if (usesCloudflare(config)) await namedStatus(config);
+  await quick.printStatus();
+  for (const host of sshHosts()) {
+    const problems = sshProblems(host);
+    console.log(`ssh ${host} from this machine: ${problems ? `will not work: ${problems} (./cfproxy apply fixes it, or use ./cfproxy ssh)` : "ok"}`);
+  }
+}
+
+async function namedStatus(config: Config) {
   const { zones, tunnel, tunnelName, ingress, records, hosts } = await observe(config);
   for (const name of new Set(hosts.map((h) => h.zone))) {
     const zone = zones.get(name);
@@ -173,10 +188,6 @@ async function status(config: Config) {
     const route = ingress.some((r) => r.hostname === hostname && r.service === service) ? "ok" : "missing";
     const note = clientHints([host]).length ? " [client needs cloudflare]" : "";
     console.log(`https://${hostname} -> ${service}   dns: ${dns}, ingress: ${route}${note}`);
-  }
-  for (const host of sshHosts()) {
-    const problems = sshProblems(host);
-    console.log(`ssh ${host} from this machine: ${problems ? `will not work: ${problems} (./cfproxy apply fixes it, or use ./cfproxy ssh)` : "ok"}`);
   }
 }
 
@@ -253,6 +264,7 @@ async function run() {
     let delay = 300_000;
     try {
       if (await reconcile(loadConfig(), true)) delay = 30_000;
+      delay = Math.min(delay, quick.notePending(Date.now() - mtime(CONFIG_PATH)) ?? delay);
       lastError = "";
     } catch (e) {
       if (!(e instanceof Fail)) throw e;
@@ -275,13 +287,16 @@ type Command = { args: string; desc: string; run: (args: string[]) => Promise<un
 const commands: Record<string, Command> = {
   run: { args: "", desc: "keep Cloudflare in sync with config/cfproxy.yml (what the background container runs)", run },
   apply: { args: "", desc: "sync Cloudflare once; ./cfproxy apply then keeps the stack running", run: apply },
-  plan: { args: "", desc: "show what apply would change, change nothing", run: () => reconcile(loadConfig(), false) },
+  plan: { args: "", desc: "show what apply would change, change nothing", run: async () => (await reconcile(loadConfig(), false), quick.printPlan()) },
   owns: { args: "<domain>", desc: "exit 0 if <domain> is already a zone in your account", run: async ([domain]) => { if (!(await listZones()).has(domain.toLowerCase())) process.exit(1); } },
   buyurl: { args: "<domain>", desc: "print the Cloudflare purchase URL for <domain> (used by buy)", run: buyLink },
   buy: { args: "<domain>", desc: "open Cloudflare Registrar to buy <domain>, then wait until it is in your account", run: buy },
   status: { args: "", desc: "show zone, tunnel and per-tunnel state", run: () => status(loadConfig()) },
-  add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>", run: async (args) => (await add(args), setupSsh()) },
-  rm: { args: "<hostname>", desc: "stop exposing <hostname>", run: rm },
+  add: { args: "<addr> [hostname]", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>; a name without dots (or none) is a quick tunnel", run: async (args) => (await add(args), setupSsh()) },
+  rm: { args: "<hostname>", desc: "stop exposing <hostname> (or quick tunnel name)", run: rm },
+  compose: { args: "", desc: "write config/compose.tunnels.yaml.new, the cloudflared containers (used by add, rm and apply)", run: quick.writeCompose },
+  url: { args: "<addr> [hostname]", desc: "wait for the URL of the quick tunnel add just started, and print it", run: quick.printUrl },
+  serves: { args: "", desc: "exit 0 if this machine has something to serve (a token or a quick tunnel)", run: () => { if (!loadSecrets().apiToken && !quick.hasQuickTunnels()) process.exit(1); } },
   install: { args: "", desc: "link cfproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
   ssh: { args: "<ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args", run: (args) => setupSsh([sshDestination(args)]) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
@@ -297,8 +312,9 @@ function usage() {
 const [given = "run", ...args] = process.argv.slice(2);
 const name = given === "-h" || given === "--help" ? "help" : given;
 const command = commands[name];
-// "..." marks a command that takes any arguments.
-if (!command || (!command.args.includes("...") && args.length !== command.args.split(" ").filter(Boolean).length)) {
+// "..." marks a command that takes any arguments, [brackets] an optional one.
+const params = command?.args.split(" ").filter(Boolean) ?? [];
+if (!command || (!command.args.includes("...") && (args.length < params.filter((p) => !p.startsWith("[")).length || args.length > params.length))) {
   console.error(command ? `usage: cfproxy ${name} ${command.args}` : usage());
   process.exit(1);
 }

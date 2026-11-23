@@ -2,11 +2,21 @@ x-logging: &logging
   driver: json-file
   options: {max-size: 5m, max-file: "3"}
 
+# The cloudflared containers, one for the named tunnel and one per quick tunnel, are generated from this into
+# config/compose.tunnels.yaml (src/quick.ts), which ./cfproxy passes to compose next to this file.
+# The version is also what `cfproxy ssh` downloads.
+x-cloudflared:
+  image: docker.io/cloudflare/cloudflared:2026.10.0
+  restart: unless-stopped
+  network_mode: host # dials out to Cloudflare; localhost:PORT reaches the host's apps
+  logging: *logging
+
 services:
   cfproxy:
     image: docker.io/oven/bun:1
     user: root
     restart: unless-stopped
+    network_mode: host # reaches the quick tunnels' metrics (their URLs) on 127.0.0.1
     logging: *logging
     command: ["bun", "/app/daemon.ts"]
     # This host, as the ./cfproxy script describes it (src/host.ts sets the host up through these and the mounts below).
@@ -15,18 +25,9 @@ services:
       - state:/state
       - ./src:/app:ro,z
       - ./config:/config:z
-      - ./compose.yaml:/host/compose.yaml:ro,z # pins the cloudflared version that cfproxy ssh downloads
+      - ./compose.yaml:/host/compose.yaml:ro,z # x-cloudflared, for the generated containers and cfproxy ssh
       - ${CFPROXY_BIN}:${CFPROXY_BIN}          # same path inside, so paths written there are valid on the host
       - ${HOME}/.ssh:/host/ssh
-
-  cloudflared:
-    image: docker.io/cloudflare/cloudflared:2026.10.0
-    restart: unless-stopped
-    network_mode: host
-    logging: *logging
-    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/state/token"]
-    volumes:
-      - state:/state:ro
 
 volumes:
   state:

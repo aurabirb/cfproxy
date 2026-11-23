@@ -1,5 +1,6 @@
-# Edit and save: changes apply within seconds.
+# Edit and save: changes to hostnames apply within seconds, to quick tunnels after ./cfproxy apply.
 
 # hostname -> where to send traffic: a port, host:port or a URL.
+# A name without a dot is a quick tunnel: a random https://....trycloudflare.com URL, no domain needed.
 tunnels:
   myapp.example.com: 3000
