@@ -11,8 +11,8 @@ git clone https://github.com/aurabirb/cfproxy.git && cd cfproxy
 
 # Without a domain (completely free):
 ./cfproxy add 3000 myapp                # prints https://<random-words>.trycloudflare.com -> localhost:3000 (new words on restart)
-./cfproxy add 22 nas                    # SSH; prints the command for the client: ./cfproxy ssh nas=<random-words>
-./cfproxy ssh nas=<random-words>        # on a client: alias nas in ~/.ssh/config (rerun with new words after a restart)
+./cfproxy add 22 nas                    # SSH; prints the command for the client: ./cfproxy ssh nas=<random-words>[.trycloudflare.com]
+./cfproxy ssh nas=<random-words>[.trycloudflare.com]  # on a client: alias nas in ~/.ssh/config (rerun with new words after a restart)
 rsync -a photos/ you@nas:photos/        # ssh, scp, rsync and git all work with the alias
 
 # Using your own domain:
