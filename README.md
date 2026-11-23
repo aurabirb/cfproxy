@@ -1,14 +1,9 @@
 # frproxy
 
-Declarative self-hosted ngrok on your own Cloudflare domain. You list `name -> local port` in
-`config/frproxy.yml`; a small daemon makes Cloudflare match it (tunnel ingress + one proxied CNAME per name)
-and `cloudflared` carries the traffic. No open ports, no public IP, runs fine on a residential box.
-The apps must run on the same machine as the stack.
+Exposes local ports (like ngrok) on your Cloudflare domains. Does not need a public IP, open ports or anything besides
+docker or podman. Just starts two small containers, a sync daemon and `cloudflared`, serving a Cloudflare tunnel.
 
 ## Example
-
-A fresh Linux box (`box`) with docker or podman, serving a web app on port 3000 and SSH, on a domain you own
-(`example.com` here; use your own, frproxy refuses `*.example.com`):
 
 ```sh
 git clone https://github.com/aurabirb/frproxy.git && cd frproxy
