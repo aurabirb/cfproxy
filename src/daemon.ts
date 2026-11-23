@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { parseArgs } from "node:util";
 import { API, CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecrets, clientHints, rm, serviceUrl, tunnelName, type Config } from "./config";
-import { TOKEN_STEPS, askToken, installCloudflared, link, setupSsh, sshHosts, sshProblems } from "./host";
+import { TOKEN_STEPS, askToken, link, setupSsh, sshDestination, sshHosts, sshProblems } from "./host";
 
 const TOKEN_FILE = "/state/token";
 const OWN_PREFIX = "frproxy-";
@@ -284,8 +283,7 @@ const commands: Record<string, Command> = {
   add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>", run: async (args) => (await add(args), setupSsh()) },
   rm: { args: "<hostname>", desc: "stop exposing <hostname>", run: rm },
   install: { args: "", desc: "link frproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
-  ssh: { args: "<ssh args...>", desc: "ssh through a tunnel from any machine: fetches cloudflared if needed, passes the rest to ssh", run: () => fail("ssh runs from the ./frproxy script on the host") },
-  cloudflared: { args: "", desc: "install cloudflared into ~/.local/bin if needed and print its path (used by ssh)", run: async () => console.log(await installCloudflared()) },
+  ssh: { args: "<ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args", run: (args) => setupSsh([sshDestination(args)]) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };
 
@@ -295,11 +293,12 @@ function usage() {
   return `usage: frproxy <command>\n${rows.map(([label, desc]) => `  ${label.padEnd(width + 2)}${desc}`).join("\n")}`;
 }
 
-const { positionals, values } = parseArgs({ allowPositionals: true, options: { help: { type: "boolean", short: "h" } } });
-const name = values.help ? "help" : (positionals[0] ?? "run");
-const args = positionals.slice(1);
+// Arguments are taken as they are, so `ssh` gets its options (-N, -L ...) untouched.
+const [given = "run", ...args] = process.argv.slice(2);
+const name = given === "-h" || given === "--help" ? "help" : given;
 const command = commands[name];
-if (!command || args.length !== command.args.split(" ").filter(Boolean).length) {
+// "..." marks a command that takes any arguments.
+if (!command || (!command.args.includes("...") && args.length !== command.args.split(" ").filter(Boolean).length)) {
   console.error(command ? `usage: frproxy ${name} ${command.args}` : usage());
   process.exit(1);
 }

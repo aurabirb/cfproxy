@@ -8,15 +8,6 @@ export FRPROXY_HOSTNAME="$(uname -n)" FRPROXY_DIR="$PWD" FRPROXY_BIN="${XDG_BIN_
   FRPROXY_OS="$(uname -s)" FRPROXY_ARCH="$(uname -m)" FRPROXY_PATH="$PATH"
 mkdir -p "$FRPROXY_BIN" && mkdir -pm 700 "$HOME/.ssh" || exit
 
-# ./frproxy ssh [ssh args]: cloudflared carries ssh through the tunnel. Checked here first so that, once it is
-# installed, ssh starts without a container.
-if [ "$1" = ssh ]; then
-  shift
-  cloudflared=$FRPROXY_BIN/cloudflared
-  [ -x "$cloudflared" ] || "$FRPROXY_DIR/frproxy" cloudflared >/dev/null || exit
-  cd "$caller" && exec ssh -o "ProxyCommand=$cloudflared access ssh --hostname %h" "$@"
-fi
-
 # Works with docker compose, podman-compose or `podman compose` (rootless included); FRPROXY_COMPOSE overrides.
 if [ -n "$FRPROXY_COMPOSE" ]; then compose=$FRPROXY_COMPOSE
 elif docker compose version >/dev/null 2>&1; then compose="docker compose"
@@ -63,6 +54,8 @@ case "$#:$1" in
   1:apply | 1:run) start ;;
   # Without a token (skipped: a machine that only uses frproxy ssh) there is nothing to serve, so nothing to start.
   1:install) daemon install && if grep -qs '^ *api_token: *[^ ]' config/.secrets.yml; then start; fi ;;
+  # The container sets up ~/.ssh/config for the destination; ssh itself runs here, from where frproxy was called.
+  *:ssh) daemon "$@" && shift && cd "$caller" && exec ssh "$@" ;;
   # The browser opens from here (the container has none); the container checks the price and waits.
   2:buy)
     # -T: no pty, so the captured URL has no carriage return.

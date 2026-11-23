@@ -129,10 +129,19 @@ export function sshProblems(host: string) {
   ].filter(Boolean).join("; ");
 }
 
-// Makes plain `ssh <host>` work here for every SSH tunnel: cloudflared, plus a ProxyCommand block in ~/.ssh/config
-// unless ssh already proxies the host. Safe to repeat.
-export async function setupSsh() {
-  for (const host of sshHosts()) {
+// The host that ssh would connect to: its first argument that is neither an option nor an option's value.
+export function sshDestination(args: string[]) {
+  for (let i = 0; i < args.length; i++) {
+    if (!args[i].startsWith("-")) return args[i].replace(/^ssh:\/\//, "").replace(/^.*@/, "").replace(/:\d+$/, "");
+    if (/^-[^-]*[BbcDEeFIiJLlmOoPpQRSWw]$/.test(args[i])) i++; // ends in an option that takes a value: skip it
+  }
+  return fail("usage: frproxy ssh [ssh options] [user@]hostname [command]");
+}
+
+// Makes plain `ssh <host>` work here (by default for every SSH tunnel in the config): cloudflared, plus a ProxyCommand
+// block in ~/.ssh/config unless ssh already proxies the host. Safe to repeat.
+export async function setupSsh(hosts = sshHosts()) {
+  for (const host of hosts) {
     const proxy = sshProxy(host);
     if (proxy && !proxy.includes("cloudflared")) {
       console.log(`${host} already has a ProxyCommand or ProxyJump in ~/.ssh/config; left it alone`);
