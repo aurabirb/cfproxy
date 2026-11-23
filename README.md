@@ -66,8 +66,18 @@ no domain, no Cloudflare account, no token. `add` prints its URL once Cloudflare
 - The URL is random and changes whenever the tunnel restarts (a reboot, a crash, a changed port). Other quick tunnels
   keep theirs when you add or remove one.
 - Cloudflare offers them for testing: no uptime guarantee, at most 200 requests in flight, no server-sent events.
-- SSH works with `cloudflared access ssh --hostname <its hostname>` on the client, but `~/.ssh/config` is left alone
-  since the hostname changes.
+
+SSH through a quick tunnel, for example to rsync to a machine without a domain:
+
+```sh
+# on the server:
+./cfproxy add 22 box                    # prints its URL and: on a client: ./cfproxy ssh box=<random-words>
+
+# on a client:
+./cfproxy ssh box=<random-words>        # alias box in ~/.ssh/config, through cloudflared (installed if needed)
+rsync -a photos/ you@box:photos/        # ssh, scp, rsync and git all work with the alias
+./cfproxy ssh box=<new-words> you@box   # after the tunnel restarts: update the alias (and connect)
+```
 
 ## Several machines
 
@@ -93,6 +103,8 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 - `./cfproxy plan`: show what `apply` would change, change nothing
 - `./cfproxy apply`: sync Cloudflare, then start (or refresh) the tunnels in the background; aborts on any error
 - `./cfproxy ssh [ssh args]`: set up plain ssh to a tunnel on this machine, then run ssh with the args
+- `./cfproxy ssh alias=<words>[.trycloudflare.com] [ssh args]`: point an ssh alias at a quick tunnel (again with new
+  words to update it), then run ssh if args are given
 - `./cfproxy buy <domain>`: open Cloudflare Registrar in your browser, wait until the domain is in your account, then exit 0 (so `./cfproxy buy x.com && ./cfproxy add 3000 app.x.com` works). Giving the token Registrar read permission also shows availability and price first
 - `./cfproxy help`
 

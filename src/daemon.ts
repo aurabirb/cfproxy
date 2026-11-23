@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { API, CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecrets, clientHints, namedTunnels, rm, serviceUrl, tunnelName, type Config } from "./config";
 import * as quick from "./quick";
-import { TOKEN_STEPS, askToken, link, setupSsh, sshDestination, sshHosts, sshProblems } from "./host";
+import { TOKEN_STEPS, askToken, isAlias, link, setupAlias, setupSsh, sshDestination, sshHosts, sshProblems } from "./host";
 
 const TOKEN_FILE = "/state/token";
 const OWN_PREFIX = "cfproxy-";
@@ -298,7 +298,7 @@ const commands: Record<string, Command> = {
   url: { args: "<addr> [hostname]", desc: "wait for the URL of the quick tunnel add just started, and print it", run: quick.printUrl },
   serves: { args: "", desc: "exit 0 if this machine has something to serve (a token or a quick tunnel)", run: () => { if (!loadSecrets().apiToken && !quick.hasQuickTunnels()) process.exit(1); } },
   install: { args: "", desc: "link cfproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
-  ssh: { args: "<ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args", run: (args) => setupSsh([sshDestination(args)]) },
+  ssh: { args: "[alias=<quick tunnel>] <ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args; alias=<words>[.trycloudflare.com] names a quick tunnel (ssh args optional)", run: (args) => (isAlias(args[0]) ? setupAlias(args[0]) : setupSsh([sshDestination(args)])) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };
 

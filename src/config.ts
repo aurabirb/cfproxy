@@ -125,13 +125,13 @@ async function withLock<T>(fn: () => T): Promise<T> {
 }
 
 // Browsers only speak HTTP(S) to a tunnel hostname; anything else needs `cloudflared access` on the client.
-// A quick tunnel's hostname is only known once it runs, so its hints show where to find it instead.
+// A quick tunnel's hostname is only known once it runs: for SSH, add prints the client command with it then.
 export function clientHints(hosts: { hostname: string; service: string }[]) {
   const lines: string[] = [];
   for (const { hostname: name, service } of hosts) {
     const hostname = isQuick(name) ? "<its trycloudflare.com hostname, from ./cfproxy status>" : name;
     const scheme = service.split("://")[0];
-    if (scheme === "http" || scheme === "https") continue;
+    if (scheme === "http" || scheme === "https" || (scheme === "ssh" && isQuick(name))) continue;
     lines.push(`${hostname} is ${scheme}, not HTTP. Clients need cloudflared (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/):`);
     if (scheme === "ssh")
       lines.push(`  on a client with this repo: ./cfproxy ssh user@${hostname}   (installs cloudflared if needed)`, "  or set up plain ssh on the client:", "", "mkdir -p ~/.ssh && cat >> ~/.ssh/config <<EOF", `Host ${hostname}`, "  ProxyCommand cloudflared access ssh --hostname %h", "EOF", "", `  then: ssh user@${hostname}`);
