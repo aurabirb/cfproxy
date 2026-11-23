@@ -59,13 +59,10 @@ cloudflare:
 
 ## Quick tunnels (no domain)
 
-A name without a dot (`./cfproxy add 3000 myapp`, or just `./cfproxy add 3000`, named `port-3000`) is a
+A name without a dot (`./cfproxy add 3000 myapp`, or `./cfproxy add 3000` for `port-3000`) is a
 [quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/):
-no domain, no Cloudflare account, no token. `add` prints its URL once Cloudflare assigns it; `status` shows it later.
-
-- The URL is random and changes whenever the tunnel restarts (a reboot, a crash, a changed port). Other quick tunnels
-  keep theirs when you add or remove one.
-- Cloudflare offers them for testing: no uptime guarantee, at most 200 requests in flight, no server-sent events.
+no domain or token. `add` and `status` print its URL, which changes whenever the tunnel restarts. Cloudflare offers
+them for testing: no uptime guarantee, at most 200 requests in flight, no server-sent events.
 
 SSH through a quick tunnel, for example to rsync to a machine without a domain:
 
@@ -96,15 +93,12 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 ## Commands
 
 - `./cfproxy install`: link `cfproxy` into ~/.local/bin, ask for the Cloudflare API token if there is none, then start like `apply`
-- `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`)
-- `./cfproxy add :8080 [name]`: the same through a quick tunnel, printing its URL
-- `./cfproxy rm app.example.com`: stop exposing it (or `rm name` for a quick tunnel)
+- `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`); a name without a dot, or none, is a quick tunnel
+- `./cfproxy rm app.example.com`: stop exposing it
 - `./cfproxy status`: zone, tunnel and per-tunnel DNS/ingress state, quick tunnel URLs, and whether ssh to each SSH tunnel works from here
 - `./cfproxy plan`: show what `apply` would change, change nothing
 - `./cfproxy apply`: sync Cloudflare, then start (or refresh) the tunnels in the background; aborts on any error
-- `./cfproxy ssh [ssh args]`: set up plain ssh to a tunnel on this machine, then run ssh with the args
-- `./cfproxy ssh alias=<words>[.trycloudflare.com] [ssh args]`: point an ssh alias at a quick tunnel (again with new
-  words to update it), then run ssh if args are given
+- `./cfproxy ssh [alias=<quick tunnel>] [ssh args]`: set up plain ssh to a tunnel on this machine (or the alias), then run ssh with the args
 - `./cfproxy buy <domain>`: open Cloudflare Registrar in your browser, wait until the domain is in your account, then exit 0 (so `./cfproxy buy x.com && ./cfproxy add 3000 app.x.com` works). Giving the token Registrar read permission also shows availability and price first
 - `./cfproxy help`
 
@@ -117,12 +111,10 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 - A domain not on Cloudflare yet is added as a zone; `status` prints the nameservers to set at your registrar.
 - The daemon (`src/daemon.ts`) syncs Cloudflare whenever `config/cfproxy.yml` or `config/.secrets.yml` changes, and every
   five minutes otherwise. It hands `cloudflared` the tunnel token through a shared volume.
-- The `cloudflared` containers (one for the named tunnel when there is a token, one per quick tunnel) are generated
-  from the `x-cloudflared` block of `compose.yaml` into `config/compose.tunnels.yaml` (`src/quick.ts`), which
-  `./cfproxy` passes to compose too. `add`, `rm` and `apply` rewrite it, remove the containers that are gone and start
-  the rest; compose recreates only the ones that changed. The daemon cannot run compose, so it only notes a hand edit
-  of a quick tunnel until `./cfproxy apply`. It reads each quick tunnel's URL from its metrics server on 127.0.0.1,
-  which is why the daemon also runs on the host network.
+- The `cloudflared` containers (the named tunnel's, and one per quick tunnel) are generated from `compose.yaml`'s
+  `x-cloudflared` into `config/compose.tunnels.yaml` (`src/quick.ts`). `add`, `rm` and `apply` rewrite it and start or
+  remove containers; compose recreates only changed ones, so other quick tunnels keep their URLs. The daemon reads
+  those URLs from each container's metrics server, so it runs on the host network.
 - Cloudflare's free certificate covers one label below the zone (`a.example.com`, not `a.b.example.com`).
 - `cfproxy ssh` downloads `cloudflared` into `~/.local/bin` and adds the host with `cloudflared` as ProxyCommand. `add`
   and `apply` do the same for this machine's SSH tunnels, using the `cloudflared` release that `compose.yaml` pins;

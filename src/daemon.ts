@@ -264,7 +264,6 @@ async function run() {
     let delay = 300_000;
     try {
       if (await reconcile(loadConfig(), true)) delay = 30_000;
-      delay = Math.min(delay, quick.notePending(Date.now() - mtime(CONFIG_PATH)) ?? delay);
       lastError = "";
     } catch (e) {
       if (!(e instanceof Fail)) throw e;

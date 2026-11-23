@@ -142,23 +142,20 @@ export function sshDestination(args: string[]) {
 // `cfproxy ssh box=<words>[.trycloudflare.com]`: a quick tunnel's hostname changes whenever it restarts, so it gets a
 // fixed alias for ssh, scp, rsync and git. Running it again with the new hostname updates the alias in place.
 export const isAlias = (arg = "") => /^[^-=@][^=@]*=/.test(arg);
-const aliasNote = (alias: string) => `# added by cfproxy: ${alias} is a quick tunnel (./cfproxy ssh ${alias}=<new hostname> updates it)`;
 
 export async function setupAlias(arg: string) {
   const [alias, target] = arg.toLowerCase().split("=", 2);
   if (!/^[\w-]+$/.test(alias) || !/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(target)) fail(`'${arg}': use alias=<words> or alias=<words>.trycloudflare.com`);
   const hostname = target.includes(".") ? target : `${target}.trycloudflare.com`;
+  const note = `# added by cfproxy for a quick tunnel: cfproxy ssh ${alias}=<new hostname> updates it`;
+  const ours = new RegExp(`\n${note}\nHost ${alias}\n  HostName \\S+\n  ProxyCommand .*\n`);
   const text = existsSync(SSH_CONFIG) ? readFileSync(SSH_CONFIG, "utf8") : "";
-  const note = aliasNote(alias);
-  const ours = new RegExp(`${note.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\nHost ${alias}\n  HostName \\S+\n  ProxyCommand .*\n`);
-  if (!ours.test(text)) {
-    // Someone else's settings for this alias are left alone: Host lines naming it, or a proxy that applies to it.
-    const named = text.split("\n").some((line) => /^\s*host\s/i.test(line) && line.trim().split(/\s+/).slice(1).includes(alias));
-    if (named || sshProxy(alias)) fail(`~/.ssh/config already has settings for ${alias}; pick another alias, or remove them first`);
-  }
-  const block = `${note}\nHost ${alias}\n  HostName ${hostname}\n  ProxyCommand ${await installCloudflared()} access ssh --hostname %h\n`;
-  if (ours.test(text)) writeFileSync(SSH_CONFIG, text.replace(ours, block));
-  else appendFileSync(SSH_CONFIG, `${text && !text.endsWith("\n") ? "\n" : ""}\n${block}`, { mode: 0o600 });
+  // Someone else's settings for this alias are left alone: Host lines naming it, or a proxy that applies to it.
+  const rest = text.replace(ours, "");
+  const named = rest.split("\n").some((line) => /^\s*host\s/i.test(line) && line.trim().split(/\s+/).slice(1).includes(alias));
+  if (rest === text && (named || sshProxy(alias))) fail(`~/.ssh/config already has settings for ${alias}; pick another alias, or remove them first`);
+  const block = `\n${note}\nHost ${alias}\n  HostName ${hostname}\n  ProxyCommand ${await installCloudflared()} access ssh --hostname %h\n`;
+  writeFileSync(SSH_CONFIG, `${rest}${rest && !rest.endsWith("\n") ? "\n" : ""}${block}`, { mode: 0o600 });
   console.log(`${alias} -> ${hostname} in ~/.ssh/config: ssh, scp and rsync work with it (rsync -a dir/ ${alias}:dir/)`);
 }
 

@@ -59,32 +59,16 @@ export function writeCompose() {
   writeFileSync(`${COMPOSE_PATH}.new`, `${HEADER}${Bun.YAML.stringify({ services: desiredServices() }, null, 2)}\n`);
 }
 
-// The containers that differ between the config and what ./cfproxy last started; empty when nothing waits on apply.
+// The containers that differ between the config and what ./cfproxy last started (new, changed or gone).
 function pendingChanges() {
   const want = desiredServices();
   const have = readServices(COMPOSE_PATH);
-  const key = (s?: Service) => JSON.stringify(s?.command);
-  const label = (name: string) => (name.startsWith("quick-") ? `quick tunnel ${name.slice(6)}` : `container ${name}`);
-  return [
-    ...Object.keys(want).filter((name) => !have[name]).map((name) => `+ ${label(name)}`),
-    ...Object.keys(want).filter((name) => have[name] && key(have[name]) !== key(want[name])).map((name) => `~ ${label(name)}`),
-    ...Object.keys(have).filter((name) => !want[name]).map((name) => `- ${label(name)}`),
-  ];
+  return Object.keys({ ...have, ...want })
+    .filter((name) => JSON.stringify(want[name]?.command) !== JSON.stringify(have[name]?.command))
+    .map((name) => (name.startsWith("quick-") ? `quick tunnel ${name.slice(6)}` : `container ${name}`));
 }
 
-export const printPlan = () => pendingChanges().forEach((change) => console.log(`(plan) ${change}`));
-
-// For the daemon loop, which cannot start containers: a hand edit is noted until ./cfproxy apply. `add` and `rm` swap
-// the containers in just after changing the config, so a change younger than SETTLE_MS is not reported yet: the
-// returned delay asks the loop to look again.
-const SETTLE_MS = 15_000;
-let lastPending = "";
-export function notePending(configAgeMs: number) {
-  const pending = pendingChanges().join(", ");
-  if (pending && configAgeMs < SETTLE_MS) return SETTLE_MS;
-  if (pending && pending !== lastPending) console.log(`run ./cfproxy apply to start: ${pending}`);
-  lastPending = pending;
-}
+export const printPlan = () => pendingChanges().forEach((change) => console.log(`(plan) ~ ${change}`));
 
 // For ./cfproxy install: whether there is anything to start without a token.
 export const hasQuickTunnels = () => quickTunnels().length > 0;
