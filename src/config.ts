@@ -46,7 +46,6 @@ export const serviceUrl = (addr: string | number) => {
 // name only identifies it here. Names with dots are hostnames in your zones, served by this machine's named tunnel.
 export const isQuick = (name: string) => !name.includes(".");
 export const namedTunnels = (tunnels: Tunnels) => Object.entries(tunnels).filter(([name]) => !isQuick(name));
-export const quickTunnels = (tunnels: Tunnels) => Object.entries(tunnels).filter(([name]) => isQuick(name));
 
 // The name `add` gives a quick tunnel when none is given: port-3000 for a bare port, else the address made safe.
 export const defaultName = (addr: string) => {
