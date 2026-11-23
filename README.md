@@ -52,12 +52,17 @@ cloudflare:
 
 ## Several machines
 
-Run one checkout per machine, all with the same Cloudflare account and token. Each machine owns its own tunnel
-(`frproxy-<hostname>`) and only touches DNS records that point at it, so they never overwrite each other. If a hostname
-is already served by another machine's tunnel, `plan`/`apply` refuse with a message naming it. To move a hostname,
-`./frproxy rm` it on the old machine first, then add it on the new one. `./frproxy status` shows who serves what.
-Upgrading from a single-instance setup: the first `apply` creates `frproxy-<hostname>` and repoints your records;
-the old tunnel named `frproxy` is left behind and can be deleted in the Cloudflare dashboard.
+Each machine serves its own hostnames through its own tunnel, all on one Cloudflare account:
+
+```sh
+# on each machine, with the same token:
+./frproxy install                       # its tunnel is frproxy-<hostname> (set `name:` first if two share a hostname)
+./frproxy add 3000 nas.example.com      # served by this machine
+
+# move a name to another machine:
+./frproxy rm nas.example.com            # on the old machine first
+./frproxy add 3000 nas.example.com      # then on the new one (before the rm, its sync stops: "already served by ...")
+```
 
 ## Commands
 
