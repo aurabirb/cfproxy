@@ -120,7 +120,7 @@ export function clientHints(hosts: { hostname: string; service: string }[]) {
     if (scheme === "http" || scheme === "https") continue;
     lines.push(`${hostname} is ${scheme}, not HTTP. Clients need cloudflared (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/):`);
     if (scheme === "ssh")
-      lines.push("  run on the client:", "", "mkdir -p ~/.ssh && cat >> ~/.ssh/config <<EOF", `Host ${hostname}`, "  ProxyCommand cloudflared access ssh --hostname %h", "EOF", "", `  then: ssh user@${hostname}`);
+      lines.push(`  on a client with this repo: ./frproxy ssh user@${hostname}   (installs cloudflared if needed)`, "  or set up plain ssh on the client:", "", "mkdir -p ~/.ssh && cat >> ~/.ssh/config <<EOF", `Host ${hostname}`, "  ProxyCommand cloudflared access ssh --hostname %h", "EOF", "", `  then: ssh user@${hostname}`);
     else lines.push(`  cloudflared access ${scheme} --hostname ${hostname} --url localhost:<port>`, `  then connect your client to localhost:<port>`);
   }
   return lines;

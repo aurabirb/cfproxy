@@ -286,6 +286,8 @@ const commands: Record<string, Command> = {
   status: { args: "", desc: "show zone, tunnel and per-tunnel state", run: () => status(loadConfig()) },
   add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>", run: add },
   rm: { args: "<hostname>", desc: "stop exposing <hostname>", run: rm },
+  sshhosts: { args: "", desc: "print the hostnames that are SSH tunnels (used by apply and status)", run: () => { for (const [host, addr] of Object.entries(loadConfig().tunnels)) if (serviceUrl(addr).startsWith("ssh://")) console.log(host); } },
+  ssh: { args: "<ssh args...>", desc: "ssh through a tunnel from any machine: installs cloudflared if needed, passes the rest to ssh", run: () => fail("ssh runs from the ./frproxy script on the host, not inside the container") },
   install: { args: "", desc: "link frproxy into ~/.local/bin so it works from any directory", run: () => fail("install runs from the ./frproxy script on the host, not inside the container") },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };

@@ -36,7 +36,16 @@ tunnels:
   api.other-domain.dev: 10.0.0.5:3000   # any host:port, or a URL like ssh://localhost:22
 ```
 
-A bare port 22 (`22` or `host:22`) is treated as SSH (`ssh://`), and `./frproxy add` prints the client setup for it (cloudflared on the client), and `./frproxy status` marks it `[client needs cloudflare]`.
+A bare port 22 (`22` or `host:22`) is treated as SSH (`ssh://`). Cloudflare only proxies HTTP for plain clients, so SSH
+needs `cloudflared` on the machine you connect from:
+
+- On any machine with a checkout (no containers or config needed): `./frproxy ssh user@wok.example.com` downloads the
+  `cloudflared` release that `compose.yaml` pins into `~/.local/bin` if there is none, then runs ssh through it. All
+  arguments go to ssh.
+- `./frproxy apply` makes plain `ssh` work on the machine running it: it installs `cloudflared` the same way and appends a
+  `Host … ProxyCommand cloudflared access ssh` block to `~/.ssh/config` for each SSH tunnel, unless ssh already has a
+  ProxyCommand or ProxyJump for it.
+- `./frproxy status` says per SSH tunnel whether `ssh` to it works from this machine, and why not.
 
 Hostnames are always full (`name.domain`), and the domains can be any zones in your Cloudflare account.
 
@@ -66,6 +75,7 @@ the old tunnel named `frproxy` is left behind and can be deleted in the Cloudfla
 - `./frproxy status`: zone, tunnel and per-tunnel DNS/ingress state
 - `./frproxy add :8080 wrong.example.com`: expose a port, `host:port` or URL (edits `config/frproxy.yml`, previous versions kept as numbered `frproxy.yml.N.bak`)
 - `./frproxy rm wrong.example.com`: stop exposing it
+- `./frproxy ssh [ssh args]`: ssh through an SSH tunnel from any machine, installing cloudflared first if needed
 - `./frproxy help`
 
 After `apply`, edits to `config/frproxy.yml` are picked up by the background daemon within seconds.
