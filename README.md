@@ -24,14 +24,13 @@ $EDITOR config/.secrets.yml             # paste the token after api_token:
 ./frproxy plan                          # preview: + tunnel frproxy-box, ingress, + CNAME app/box.example.com
 ./frproxy apply                         # sync Cloudflare, start the tunnel in the background, survive reboots
 ./frproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
+
+./frproxy ssh you@box.example.com       # from any machine with a checkout; fetches cloudflared on first use
+./frproxy ssh -N -L 8080:localhost:3000 you@box.example.com    # forward a port that is not in the tunnel list
+rsync -av -e "./frproxy ssh" ./site/ you@box.example.com:site/  # anything that takes an ssh command
 ```
 
-`https://app.example.com` now reaches the app. From a laptop (Linux or macOS, nothing else to install):
-
-```sh
-git clone https://github.com/aurabirb/frproxy.git && cd frproxy
-./frproxy ssh you@box.example.com       # downloads cloudflared into ~/.local/bin on first use; args go to ssh
-```
+`https://app.example.com` now reaches the app.
 
 `./frproxy` alone lists all commands.
 
