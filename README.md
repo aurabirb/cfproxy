@@ -5,23 +5,40 @@ Declarative self-hosted ngrok on your own Cloudflare domain. You list `name -> l
 and `cloudflared` carries the traffic. No open ports, no public IP, runs fine on a residential box.
 The apps must run on the same machine as the stack.
 
-## Setup
+## Example
 
-```
-git clone <this repo> && cd frproxy
-cp config/frproxy.yml.example config/frproxy.yml   # your own copy; it is gitignored
-$EDITOR config/frproxy.yml          # list your hostnames
-cp config/.secrets.yml.example config/.secrets.yml   # then paste your Cloudflare API token into it
-./frproxy plan                      # preview what will change
-./frproxy apply                     # sync Cloudflare and start the tunnel in the background
-./frproxy                           # list all commands
-./frproxy install                   # optional: link it into ~/.local/bin so `frproxy` works from any directory
+A fresh Linux box (`box`) with docker or podman, serving a web app on port 3000 and SSH, on a domain you own
+(`example.com` here; use your own, frproxy refuses `*.example.com`):
+
+```sh
+git clone https://github.com/aurabirb/frproxy.git && cd frproxy
+./frproxy install                       # optional: `frproxy` from any directory (links into ~/.local/bin)
+
+./frproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000 (creates config/frproxy.yml)
+./frproxy add 22 box.example.com        # SSH; prints what clients need
+
+./frproxy plan                          # no token yet: prints how to create one
+cp config/.secrets.yml.example config/.secrets.yml
+$EDITOR config/.secrets.yml             # paste the token after api_token:
+
+./frproxy plan                          # preview: + tunnel frproxy-box, ingress, + CNAME app/box.example.com
+./frproxy apply                         # sync Cloudflare, start the tunnel in the background, survive reboots
+./frproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
 ```
 
-`config/.secrets.yml` is re-read on every use (and wakes the daemon), so fixing a token needs no restart.
-Without a token, `plan` and `apply` print exactly how to create one: Account | Cloudflare Tunnel | Edit,
-Zone | Zone | Edit, Zone | DNS | Edit, Account | Account Settings | Read; Account Resources: your account,
-Zone Resources: All zones. Any error aborts `apply` before anything is started.
+`https://app.example.com` now reaches the app. From a laptop (Linux or macOS, nothing else to install):
+
+```sh
+git clone https://github.com/aurabirb/frproxy.git && cd frproxy
+./frproxy ssh you@box.example.com       # downloads cloudflared into ~/.local/bin on first use; args go to ssh
+```
+
+`./frproxy` alone lists all commands.
+
+The token needs Account | Cloudflare Tunnel | Edit, Zone | Zone | Edit, Zone | DNS | Edit and Account | Account Settings |
+Read; Account Resources: your account, Zone Resources: All zones (`plan` prints these steps). `config/.secrets.yml` is
+re-read on every use (and wakes the daemon), so fixing a token needs no restart. Any error aborts `apply` before anything
+is started.
 If a hostname's domain is not on Cloudflare yet, `apply` creates the zone (the last two labels of the hostname, so
 `co.uk`-style domains must be added to Cloudflare first) and prints the two nameservers to set at your registrar; the
 background daemon keeps polling until it is active. That is the only manual step besides the token.
@@ -39,7 +56,7 @@ tunnels:
 A bare port 22 (`22` or `host:22`) is treated as SSH (`ssh://`). Cloudflare only proxies HTTP for plain clients, so SSH
 needs `cloudflared` on the machine you connect from:
 
-- On any machine with a checkout (no containers or config needed): `./frproxy ssh user@wok.example.com` downloads the
+- On any machine with a checkout (no containers or config needed): `./frproxy ssh user@box.example.com` downloads the
   `cloudflared` release that `compose.yaml` pins into `~/.local/bin` if there is none, then runs ssh through it. All
   arguments go to ssh.
 - `./frproxy apply` makes plain `ssh` work on the machine running it: it installs `cloudflared` the same way and appends a

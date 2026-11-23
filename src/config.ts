@@ -20,7 +20,9 @@ export const fail = (msg: string): never => {
 };
 
 // A syntax error from a hand edit must not kill the daemon: it is reported and retried like any other Fail.
+// A missing file is empty, so a fresh checkout can start with `./frproxy add` (which creates it).
 function readYaml(path: string): any {
+  if (!existsSync(path)) return {};
   try {
     return Bun.YAML.parse(readFileSync(path, "utf8")) ?? {};
   } catch (e: any) {
