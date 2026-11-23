@@ -1,7 +1,7 @@
 # frproxy
 
-Exposes local ports (like ngrok) on your Cloudflare domains. Does not need a public IP, open ports or anything besides
-docker or podman. Just starts two small containers, a sync daemon and `cloudflared`, serving a Cloudflare tunnel.
+Exposes local ports (like ngrok) using free Cloudflare tunnels and your domain name. No public IP or open ports needed.
+Just starts two containers with cloudflared and bun.
 
 ## Example
 
