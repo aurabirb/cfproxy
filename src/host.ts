@@ -11,6 +11,7 @@ const bin = () => env("FRPROXY_BIN");
 export const TOKEN_STEPS = `
   Create a Cloudflare API token:
     1. https://dash.cloudflare.com/profile/api-tokens -> Create Token -> Create Custom Token
+       (an account token, from Manage Account -> API Tokens, works too)
     2. Permissions:
          Account | Cloudflare Tunnel | Edit
          Zone    | Zone              | Edit
@@ -42,7 +43,8 @@ function askHidden(question: string) {
   }
 }
 
-// Asks until Cloudflare accepts a token, then saves it; Enter skips (machines that only use `frproxy ssh` need none).
+// Asks until Cloudflare accepts a token, then saves it; an empty line skips (machines that only use `frproxy ssh` need
+// none). Listing zones works for user and account tokens alike and needs a permission frproxy uses.
 // Returns whether there is a token now.
 export async function askToken() {
   if (loadSecrets().apiToken) return true;
@@ -51,9 +53,9 @@ export async function askToken() {
   for (;;) {
     const token = askHidden("Paste the token (hidden; Enter to skip):");
     if (!token) return console.log("skipped; ./frproxy install asks again"), false;
-    const accepted = /^[\w-]+$/.test(token) && (await fetch(`${API}/user/tokens/verify`, { headers: { Authorization: `Bearer ${token}` } })).ok;
+    const accepted = /^[\w-]+$/.test(token) && (await fetch(`${API}/zones?per_page=1`, { headers: { Authorization: `Bearer ${token}` } })).ok;
     if (!accepted) {
-      console.log("Cloudflare does not accept that token; try again");
+      console.log("Cloudflare rejected that token (or it cannot read zones); try again");
       continue;
     }
     const example = readFileSync(`${SECRETS_PATH}.example`, "utf8");

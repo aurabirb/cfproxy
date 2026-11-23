@@ -27,9 +27,10 @@ rsync -av -e "./frproxy ssh" ./site/ you@box.example.com:site/  # anything that 
 
 `./frproxy` alone lists all commands.
 
-The token needs Account | Cloudflare Tunnel | Edit, Zone | Zone | Edit, Zone | DNS | Edit and Account | Account Settings |
-Read; Account Resources: your account, Zone Resources: All zones. `install` prints these steps and checks the token with
-Cloudflare before saving it to `config/.secrets.yml`; Enter skips it on machines that only use `frproxy ssh`. The file is
+The token (a user or an account token) needs Account | Cloudflare Tunnel | Edit, Zone | Zone | Edit, Zone | DNS | Edit and
+Account | Account Settings | Read; Account Resources: your account, Zone Resources: All zones. `install` prints these steps
+and checks the token with Cloudflare before saving it to `config/.secrets.yml`; Enter (or Ctrl-C) skips it (machines
+that only use `frproxy ssh` need none). The file is
 re-read on every use (and wakes the daemon), so fixing a token needs no restart. Any error aborts `apply` before anything
 is started.
 If a hostname's domain is not on Cloudflare yet, `apply` creates the zone (the last two labels of the hostname, so
