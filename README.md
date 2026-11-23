@@ -5,6 +5,19 @@ docker or podman. Just starts two small containers, a sync daemon and `cloudflar
 
 ## Example
 
+```sh
+git clone https://github.com/aurabirb/frproxy.git && cd frproxy
+./frproxy install                       # link into ~/.local/bin, ask for your Cloudflare API token, start (survives reboots)
+
+./frproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000, live within seconds
+./frproxy add 22 box.example.com        # SSH; also makes plain `ssh box.example.com` work on this machine
+./frproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
+
+./frproxy ssh you@box.example.com       # run once on a client to set up ssh access through cloudflared
+```
+
+Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
+
 Create a Cloudflare API token:
 
 1. [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) → **Create Token** →
@@ -20,19 +33,6 @@ Create a Cloudflare API token:
 
 3. **Account Resources:** Include → your account. **Zone Resources:** Include → All zones
    (a single zone works once the domain is already on Cloudflare)
-
-```sh
-git clone https://github.com/aurabirb/frproxy.git && cd frproxy
-./frproxy install                       # link into ~/.local/bin, ask for your Cloudflare API token, start (survives reboots)
-
-./frproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000, live within seconds
-./frproxy add 22 box.example.com        # SSH; also makes plain `ssh box.example.com` work on this machine
-./frproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
-
-./frproxy ssh you@box.example.com       # run once on a client to set up ssh access through cloudflared
-```
-
-Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
 
 ## Configuration
 
