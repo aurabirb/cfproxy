@@ -46,9 +46,11 @@ survive_reboot() {
   systemctl --user is-enabled -q podman-restart.service 2>/dev/null ||
     systemctl --user enable -q podman-restart.service ||
     echo "frproxy: could not enable podman-restart.service; the tunnel will not come back after a reboot" >&2
-  [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] ||
-    loginctl enable-linger "$(id -un)" ||
-    echo "frproxy: could not enable linger (try: sudo loginctl enable-linger $(id -un)); the tunnel will only start after you log in" >&2
+  me=$(id -un)
+  [ "$(loginctl show-user "$me" -p Linger --value 2>/dev/null)" = yes ] || loginctl enable-linger "$me" 2>/dev/null || {
+    echo "frproxy: enabling linger needs root, running: sudo loginctl enable-linger $me" >&2
+    sudo loginctl enable-linger "$me"
+  } || echo "frproxy: linger not enabled; the tunnel will only start after you log in" >&2
 }
 
 [ $# = 0 ] && set -- help
