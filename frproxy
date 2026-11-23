@@ -37,10 +37,25 @@ if [ "$1" = buy ] && [ $# = 2 ]; then
   exec $run frproxy bun /app/daemon.ts buy "$2"
 fi
 
+# Podman ignores `restart: unless-stopped` across reboots: containers only come back if podman-restart.service is
+# enabled, and for rootless podman the user manager must also run without a login session (linger).
+# Docker's daemon handles this itself, so only act when the engine is rootless podman.
+survive_reboot() {
+  command -v podman >/dev/null && command -v systemctl >/dev/null || return 0
+  [ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = true ] || return 0
+  systemctl --user is-enabled -q podman-restart.service 2>/dev/null ||
+    systemctl --user enable -q podman-restart.service ||
+    echo "frproxy: could not enable podman-restart.service; the tunnel will not come back after a reboot" >&2
+  [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] ||
+    loginctl enable-linger "$(id -un)" ||
+    echo "frproxy: could not enable linger (try: sudo loginctl enable-linger $(id -un)); the tunnel will only start after you log in" >&2
+}
+
 [ $# = 0 ] && set -- help
 if [ $# = 1 ] && { [ "$1" = apply ] || [ "$1" = run ]; }; then
   # --force-recreate: ./src is bind-mounted, so without it the daemon would keep running the code it started with.
-  daemon apply && $compose up -d --force-recreate frproxy && $compose up -d && echo "frproxy: running in the background (./frproxy status to check)"
+  daemon apply && $compose up -d --force-recreate frproxy && $compose up -d && survive_reboot &&
+    echo "frproxy: running in the background, restarts after reboot (./frproxy status to check)"
 else
   daemon "$@"
 fi

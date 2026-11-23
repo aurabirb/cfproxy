@@ -83,6 +83,6 @@ After `apply`, edits to `config/frproxy.yml` are picked up by the background dae
 - Cloudflare's proxy sees all traffic in plaintext. One label below the zone only (`a.domain`, not `a.b.domain`).
 - Works with docker compose, podman-compose and rootless podman (the wrapper picks whichever it finds; set `FRPROXY_COMPOSE`
   to force one). In rootless podman the container's `root` is just your user, so files in `config/` stay yours. To have the
-  stack start at boot without a login session: `loginctl enable-linger $USER` and
-  `systemctl --user enable --now podman-restart.service`.
+  stack start at boot, `apply` enables `podman-restart.service` and linger for your user (podman ignores
+  `restart: unless-stopped` across reboots otherwise).
 - The API token lives in `config/.secrets.yml`; scope it as above and revoke it if it leaks.
