@@ -1,26 +1,33 @@
 # cfproxy
 
-Exposes local ports (like ngrok) using free Cloudflare tunnels and your domain name, or without a domain through
-quick tunnels. No public IP or open ports needed. Just runs cloudflared and bun in containers.
+Exposes local ports (like ngrok) using free Cloudflare tunnels with or without a domain name. No public IP or open ports
+needed. Just runs cloudflared and bun in containers.
 
 ## Example
 
 ```sh
 git clone https://github.com/aurabirb/cfproxy.git && cd cfproxy
-./cfproxy install                       # link into ~/.local/bin, ask for your Cloudflare API token, start (survives reboots)
+./cfproxy install                       # link into ~/.local/bin, ask for a Cloudflare API token (Enter skips), start (survives reboots)
 
+# Without a domain (completely free):
+./cfproxy add 3000 myapp                # prints https://<random-words>.trycloudflare.com -> localhost:3000 (new words on restart)
+./cfproxy add 22 nas                    # SSH; prints the command for the client: ./cfproxy ssh nas=<random-words>
+./cfproxy ssh nas=<random-words>        # on a client: alias nas in ~/.ssh/config (rerun with new words after a restart)
+rsync -a photos/ you@nas:photos/        # ssh, scp, rsync and git all work with the alias
+
+# Using your own domain:
 ./cfproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000, live within seconds
 ./cfproxy add 22 box.example.com        # SSH; also makes plain `ssh box.example.com` work on this machine
 ./cfproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
-
 ./cfproxy ssh you@box.example.com       # run once on a client to set up ssh access through cloudflared
-
-./cfproxy add 3000 myapp                # no domain or token: prints https://<random words>.trycloudflare.com
 ```
 
 Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
+A name without a dot (`./cfproxy add 3000 myapp`) is a
+[quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/):
+no domain or Cloudflare account needed.
 
-Create a Cloudflare API token:
+[Optional] Creating a Cloudflare API token:
 
 1. [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) → **Create Token** →
    **Create Custom Token** (an account token, from Manage Account → API Tokens, works too)
@@ -57,28 +64,10 @@ cloudflare:
   api_token: <token>
 ```
 
-## Quick tunnels (no domain)
-
-A name without a dot (`./cfproxy add 3000 myapp`) is a
-[quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/):
-no domain or token. `add` and `status` print its URL, which changes whenever the tunnel restarts. Cloudflare offers
-them for testing: no uptime guarantee, at most 200 requests in flight, no server-sent events.
-
-SSH through a quick tunnel, for example to rsync to a machine without a domain:
-
-```sh
-# on the server:
-./cfproxy add 22 box                    # prints its URL and: on a client: ./cfproxy ssh box=<random-words>
-
-# on a client:
-./cfproxy ssh box=<random-words>        # alias box in ~/.ssh/config, through cloudflared (installed if needed)
-rsync -a photos/ you@box:photos/        # ssh, scp, rsync and git all work with the alias
-./cfproxy ssh box=<new-words> you@box   # after the tunnel restarts: update the alias (and connect)
-```
-
 ## Several machines
 
-Each machine serves its own hostnames through its own tunnel, all on one Cloudflare account:
+Each machine serves its own hostnames through its own tunnel, all on one Cloudflare account. Quick tunnels are not
+shared: each machine runs its own, with its own random hostname, so two machines can use the same name.
 
 ```sh
 # on each machine, with the same token:
@@ -93,7 +82,8 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 ## Commands
 
 - `./cfproxy install`: link `cfproxy` into ~/.local/bin, ask for the Cloudflare API token if there is none, then start like `apply` (on machines that serve tunnels; clients only need `./cfproxy ssh`)
-- `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`); a name without a dot is a quick tunnel
+- `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`)
+- `./cfproxy add 3000 quicktest`: expose it through a quick tunnel instead, at a random https://….trycloudflare.com that `add` and `status` print
 - `./cfproxy rm app.example.com`: stop exposing it
 - `./cfproxy status`: zone, tunnel and per-tunnel DNS/ingress state, quick tunnel URLs, and whether ssh to each SSH tunnel works from here
 - `./cfproxy plan`: show what `apply` would change, change nothing
