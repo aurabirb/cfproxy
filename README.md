@@ -12,7 +12,6 @@ git clone https://github.com/aurabirb/cfproxy.git && cd cfproxy
 # Without a domain (completely free):
 ./cfproxy add 3000 myapp                # prints https://<random-words>.trycloudflare.com -> localhost:3000 (new words on restart)
 ./cfproxy add 22 nas                    # SSH; prints the client command: ./cfproxy ssh nas=<user>@<random-words>
-./cfproxy rm myapp                      # stop exposing it (hostnames on your domain too)
 
 # Using your own domain:
 ./cfproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000, live within seconds
@@ -24,6 +23,8 @@ git clone https://github.com/aurabirb/cfproxy.git && cd cfproxy
 ./cfproxy ssh nas=you@<random-words>[.trycloudflare.com]   # an alias, to a quick tunnel or any hostname; `ssh nas` works after
 ./cfproxy ssh nas                       # through the alias (rerun the line above with the new words after a restart)
 rsync -a photos/ nas:photos/            # scp, rsync and git work with both
+
+./cfproxy rm myapp                      # stop exposing it (hostnames on your domain too)
 ```
 
 Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
