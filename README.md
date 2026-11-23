@@ -62,7 +62,8 @@ name: box                               # optional: the tunnel is cfproxy-box (d
 account_id: 0123abcd                    # optional: only if the token cannot read your account ID
 ```
 
-`config/.secrets.yml` (written by `install`, git-ignored, re-read on every use):
+`config/.secrets.yml` (written by `install`, git-ignored, re-read on every use; after adding a token by hand, run
+`./cfproxy apply` once to start the container that serves your domain):
 
 ```yaml
 cloudflare:

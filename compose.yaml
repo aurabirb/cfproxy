@@ -20,12 +20,12 @@ services:
     logging: *logging
     command: ["bun", "/app/daemon.ts"]
     # This host, as the ./cfproxy script describes it (src/host.ts sets the host up through these and the mounts below).
-    environment: [CFPROXY_HOSTNAME, CFPROXY_DIR, CFPROXY_BIN, CFPROXY_OS, CFPROXY_ARCH, CFPROXY_PATH]
+    environment: [CFPROXY_HOSTNAME, CFPROXY_DIR, CFPROXY_BIN, CFPROXY_OS, CFPROXY_ARCH, CFPROXY_PATH, CFPROXY_OWNER]
     volumes:
       - state:/state
       - ./src:/app:ro,z
       - ./config:/config:z
-      - ./compose.yaml:/host/compose.yaml:ro,z # x-cloudflared, for the generated containers and cfproxy ssh
+      - .:/host/cfproxy:ro,z                   # compose.yaml's x-cloudflared, for the generated containers and cfproxy ssh
       - ${CFPROXY_BIN}:${CFPROXY_BIN}          # same path inside, so paths written there are valid on the host
       - ${HOME}/.ssh:/host/ssh
 

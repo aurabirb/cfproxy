@@ -1,6 +1,6 @@
 // The config file is the only thing shared between the CLI helpers and the Cloudflare daemon:
 // both go through normalize(), so an entry behaves the same however it got into the file.
-import { closeSync, copyFileSync, existsSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, lchownSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type Tunnels = Record<string, string | number>;
@@ -14,6 +14,13 @@ const HEADER = `# Edit and save: changes to hostnames apply within seconds, to q
 # hostname -> where to send traffic: a port, host:port or a URL.
 # A name without a dot is a quick tunnel: a random https://....trycloudflare.com URL, no domain needed.
 `;
+
+// Under rootful docker the container's root is the host's root, so files it writes into the host's directories are handed
+// to the user running ./cfproxy (CFPROXY_OWNER, uid:gid). Rootless podman maps root to that user already.
+export function own(...paths: string[]) {
+  const owner = process.env.CFPROXY_OWNER?.split(":").map(Number);
+  if (owner?.length === 2) for (const path of paths) lchownSync(path, owner[0], owner[1]);
+}
 
 export class Fail extends Error {}
 export const fail = (msg: string): never => {
@@ -87,10 +94,13 @@ function saveConfig(raw: object) {
   if (existsSync(CONFIG_PATH)) {
     if (readFileSync(CONFIG_PATH, "utf8") === text) return;
     const numbers = readdirSync(dirname(CONFIG_PATH)).map((f) => Number(f.match(/^cfproxy\.yml\.(\d+)\.bak$/)?.[1] ?? 0));
-    copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.${Math.max(0, ...numbers) + 1}.bak`);
+    const bak = `${CONFIG_PATH}.${Math.max(0, ...numbers) + 1}.bak`;
+    copyFileSync(CONFIG_PATH, bak);
+    own(bak);
   }
   const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
   writeFileSync(tmp, text);
+  own(tmp);
   renameSync(tmp, CONFIG_PATH); // atomic: the daemon never sees a half-written file
 }
 
