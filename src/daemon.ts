@@ -3,10 +3,10 @@ import { API, CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecret
 import { TOKEN_STEPS, askToken, link, setupSsh, sshDestination, sshHosts, sshProblems } from "./host";
 
 const TOKEN_FILE = "/state/token";
-const OWN_PREFIX = "frproxy-";
+const OWN_PREFIX = "cfproxy-";
 
 const TOKEN_HELP = `${TOKEN_STEPS}
-    4. Run ./frproxy install, which asks for it, or put it in config/.secrets.yml (see .secrets.yml.example);
+    4. Run ./cfproxy install, which asks for it, or put it in config/.secrets.yml (see .secrets.yml.example);
        it is re-read automatically.`;
 
 // --- Cloudflare API ---
@@ -45,7 +45,7 @@ async function listZones() {
 async function findAccount(zones: Map<string, Zone>, configured?: string) {
   if (configured) return configured;
   const accounts = [...new Set([...zones.values()].map((z) => z.account.id))];
-  if (accounts.length > 1) fail("Your zones span several Cloudflare accounts; set account_id in config/frproxy.yml to the one frproxy should use.");
+  if (accounts.length > 1) fail("Your zones span several Cloudflare accounts; set account_id in config/cfproxy.yml to the one cfproxy should use.");
   if (accounts.length === 1) return accounts[0];
   const found = await cf("/accounts").catch(() => []);
   return found.length === 1 ? found[0].id : undefined;
@@ -54,7 +54,7 @@ async function findAccount(zones: Map<string, Zone>, configured?: string) {
 const requireAccount = (account?: string) =>
   account ??
   fail(`Could not work out your Cloudflare account ID.
-  Set account_id in config/frproxy.yml (dash.cloudflare.com -> any domain -> Overview -> API section -> Account ID),
+  Set account_id in config/cfproxy.yml (dash.cloudflare.com -> any domain -> Overview -> API section -> Account ID),
   or give the token Account | Account Settings | Read.`);
 
 // A tunnel's DNS name and back again; the CNAME content is how DNS records are matched to tunnels.
@@ -83,7 +83,7 @@ async function observe({ tunnels, name, accountId }: Config) {
   const records = new Map<string, any[]>();
   for (const zone of zones.values()) records.set(zone.name, await cf(`/zones/${zone.id}/dns_records?type=CNAME&per_page=1000`));
 
-  // `owner` is another machine's frproxy tunnel that already serves this hostname.
+  // `owner` is another machine's cfproxy tunnel that already serves this hostname.
   const hosts = wanted.map((host) => {
     return { ...host, owner: others.get(tunnelIdOf(recordFor(records, host)?.content ?? "")) };
   });
@@ -176,7 +176,7 @@ async function status(config: Config) {
   }
   for (const host of sshHosts()) {
     const problems = sshProblems(host);
-    console.log(`ssh ${host} from this machine: ${problems ? `will not work: ${problems} (./frproxy apply fixes it, or use ./frproxy ssh)` : "ok"}`);
+    console.log(`ssh ${host} from this machine: ${problems ? `will not work: ${problems} (./cfproxy apply fixes it, or use ./cfproxy ssh)` : "ok"}`);
   }
 }
 
@@ -191,7 +191,7 @@ const cleanDomain = (input: string) => {
   return domain;
 };
 
-// For the ./frproxy wrapper, which opens the browser: prints the purchase URL, exits 1 if the domain is already ours.
+// For the ./cfproxy wrapper, which opens the browser: prints the purchase URL, exits 1 if the domain is already ours.
 async function buyLink([input]: string[]) {
   const domain = cleanDomain(input);
   const zones = await listZones();
@@ -203,7 +203,7 @@ const BUY_WAIT_MS = 15 * 60_000;
 // The first line of a failure only: the token help that cf() appends is noise here.
 const brief = (e: unknown) => (e instanceof Error ? e.message.split("\n")[0] : String(e));
 
-// Opening the browser happens in the ./frproxy wrapper (the container has none); this checks the price,
+// Opening the browser happens in the ./cfproxy wrapper (the container has none); this checks the price,
 // then waits until the domain shows up in the account. Exits 0 only once it is ours, so `buy x && add ...` is safe.
 async function buy([input]: string[]) {
   const domain = cleanDomain(input);
@@ -235,9 +235,9 @@ async function buy([input]: string[]) {
       const owned: { name: string }[] = await cf(`/accounts/${account}/registrar/domains`).catch(() => []);
       if (owned.some((d) => d.name === domain)) zone = await cf("/zones", send("POST", { name: domain, account: { id: account }, type: "full" }));
     }
-    if (zone) return console.log(`${domain} is yours: zone ${zone.status}. Next: ./frproxy add <port> name.${domain}`);
+    if (zone) return console.log(`${domain} is yours: zone ${zone.status}. Next: ./cfproxy add <port> name.${domain}`);
   }
-  fail(`${domain} did not show up in your account within 15 minutes; run ./frproxy buy ${domain} again after purchasing`);
+  fail(`${domain} did not show up in your account within 15 minutes; run ./cfproxy buy ${domain} again after purchasing`);
 }
 
 // --- the daemon loop and commands ---
@@ -273,8 +273,8 @@ async function apply() {
 
 type Command = { args: string; desc: string; run: (args: string[]) => Promise<unknown> | void };
 const commands: Record<string, Command> = {
-  run: { args: "", desc: "keep Cloudflare in sync with config/frproxy.yml (what the background container runs)", run },
-  apply: { args: "", desc: "sync Cloudflare once; ./frproxy apply then keeps the stack running", run: apply },
+  run: { args: "", desc: "keep Cloudflare in sync with config/cfproxy.yml (what the background container runs)", run },
+  apply: { args: "", desc: "sync Cloudflare once; ./cfproxy apply then keeps the stack running", run: apply },
   plan: { args: "", desc: "show what apply would change, change nothing", run: () => reconcile(loadConfig(), false) },
   owns: { args: "<domain>", desc: "exit 0 if <domain> is already a zone in your account", run: async ([domain]) => { if (!(await listZones()).has(domain.toLowerCase())) process.exit(1); } },
   buyurl: { args: "<domain>", desc: "print the Cloudflare purchase URL for <domain> (used by buy)", run: buyLink },
@@ -282,7 +282,7 @@ const commands: Record<string, Command> = {
   status: { args: "", desc: "show zone, tunnel and per-tunnel state", run: () => status(loadConfig()) },
   add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>", run: async (args) => (await add(args), setupSsh()) },
   rm: { args: "<hostname>", desc: "stop exposing <hostname>", run: rm },
-  install: { args: "", desc: "link frproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
+  install: { args: "", desc: "link cfproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
   ssh: { args: "<ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args", run: (args) => setupSsh([sshDestination(args)]) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };
@@ -290,7 +290,7 @@ const commands: Record<string, Command> = {
 function usage() {
   const rows = Object.entries(commands).map(([name, c]) => [`${name} ${c.args}`.trim(), c.desc]);
   const width = Math.max(...rows.map(([label]) => label.length));
-  return `usage: frproxy <command>\n${rows.map(([label, desc]) => `  ${label.padEnd(width + 2)}${desc}`).join("\n")}`;
+  return `usage: cfproxy <command>\n${rows.map(([label, desc]) => `  ${label.padEnd(width + 2)}${desc}`).join("\n")}`;
 }
 
 // Arguments are taken as they are, so `ssh` gets its options (-N, -L ...) untouched.
@@ -299,7 +299,7 @@ const name = given === "-h" || given === "--help" ? "help" : given;
 const command = commands[name];
 // "..." marks a command that takes any arguments.
 if (!command || (!command.args.includes("...") && args.length !== command.args.split(" ").filter(Boolean).length)) {
-  console.error(command ? `usage: frproxy ${name} ${command.args}` : usage());
+  console.error(command ? `usage: cfproxy ${name} ${command.args}` : usage());
   process.exit(1);
 }
 

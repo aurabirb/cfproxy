@@ -7,7 +7,7 @@ export type Tunnels = Record<string, string | number>;
 export type Config = { tunnels: Tunnels; name?: string; accountId?: string };
 
 export const API = "https://api.cloudflare.com/client/v4";
-export const CONFIG_PATH = "/config/frproxy.yml";
+export const CONFIG_PATH = "/config/cfproxy.yml";
 export const SECRETS_PATH = "/config/.secrets.yml";
 const HEADER = `# Edit and save: changes apply within seconds.
 
@@ -20,7 +20,7 @@ export const fail = (msg: string): never => {
 };
 
 // A syntax error from a hand edit must not kill the daemon: it is reported and retried like any other Fail.
-// A missing file is empty, so a fresh checkout can start with `./frproxy add` (which creates it).
+// A missing file is empty, so a fresh checkout can start with `./cfproxy add` (which creates it).
 function readYaml(path: string): any {
   if (!existsSync(path)) return {};
   try {
@@ -43,7 +43,7 @@ export const serviceUrl = (addr: string | number) => {
 
 function normalize(host: string, addr: string | number): [string, string | number] {
   const hostname = host.toLowerCase();
-  if (hostname.endsWith(".example.com")) fail(`Replace the example hostname ${hostname} in config/frproxy.yml with your own domain.`);
+  if (hostname.endsWith(".example.com")) fail(`Replace the example hostname ${hostname} in config/cfproxy.yml with your own domain.`);
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+){2,}$/.test(hostname)) fail(`'${host}': use a full hostname like name.example.com`);
 
   const target = String(addr).replace(/^:/, "");
@@ -61,12 +61,12 @@ export function loadConfig(): Config {
   return { tunnels: normalizeAll(raw.tunnels), name, accountId: raw.account_id == null ? undefined : String(raw.account_id) };
 }
 
-// Each machine owns one Cloudflare tunnel, frproxy-<name>, so several machines can share an account.
-// The name defaults to the host's hostname; `name:` in frproxy.yml overrides it.
+// Each machine owns one Cloudflare tunnel, cfproxy-<name>, so several machines can share an account.
+// The name defaults to the host's hostname; `name:` in cfproxy.yml overrides it.
 export function tunnelName(name?: string) {
-  if (name) return `frproxy-${name}`;
-  const suffix = (process.env.FRPROXY_HOSTNAME ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `frproxy-${suffix || fail("Could not read this machine's hostname; set `name:` in config/frproxy.yml")}`;
+  if (name) return `cfproxy-${name}`;
+  const suffix = (process.env.CFPROXY_HOSTNAME ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `cfproxy-${suffix || fail("Could not read this machine's hostname; set `name:` in config/cfproxy.yml")}`;
 }
 
 // Read on every use, so a token pasted into the file is picked up without restarting anything.
@@ -79,7 +79,7 @@ function saveConfig(raw: object) {
   const text = `${HEADER}${Bun.YAML.stringify(raw, null, 2)}\n`;
   if (existsSync(CONFIG_PATH)) {
     if (readFileSync(CONFIG_PATH, "utf8") === text) return;
-    const numbers = readdirSync(dirname(CONFIG_PATH)).map((f) => Number(f.match(/^frproxy\.yml\.(\d+)\.bak$/)?.[1] ?? 0));
+    const numbers = readdirSync(dirname(CONFIG_PATH)).map((f) => Number(f.match(/^cfproxy\.yml\.(\d+)\.bak$/)?.[1] ?? 0));
     copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.${Math.max(0, ...numbers) + 1}.bak`);
   }
   const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
@@ -87,7 +87,7 @@ function saveConfig(raw: object) {
   renameSync(tmp, CONFIG_PATH); // atomic: the daemon never sees a half-written file
 }
 
-const applied = "applies automatically if the stack is running; otherwise run ./frproxy apply";
+const applied = "applies automatically if the stack is running; otherwise run ./cfproxy apply";
 const LOCK = `${CONFIG_PATH}.lock`;
 
 // Serializes read-modify-write cycles so concurrent commands don't overwrite each other's entries.
@@ -99,7 +99,7 @@ async function withLock<T>(fn: () => T): Promise<T> {
       break;
     } catch (e: any) {
       if (e.code !== "EEXIST") throw e;
-      if (waited >= 5_000) fail("config/frproxy.yml.lock exists; if no other frproxy command is running, delete it and try again");
+      if (waited >= 5_000) fail("config/cfproxy.yml.lock exists; if no other cfproxy command is running, delete it and try again");
       await Bun.sleep(50);
     }
   }
@@ -118,7 +118,7 @@ export function clientHints(hosts: { hostname: string; service: string }[]) {
     if (scheme === "http" || scheme === "https") continue;
     lines.push(`${hostname} is ${scheme}, not HTTP. Clients need cloudflared (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/):`);
     if (scheme === "ssh")
-      lines.push(`  on a client with this repo: ./frproxy ssh user@${hostname}   (installs cloudflared if needed)`, "  or set up plain ssh on the client:", "", "mkdir -p ~/.ssh && cat >> ~/.ssh/config <<EOF", `Host ${hostname}`, "  ProxyCommand cloudflared access ssh --hostname %h", "EOF", "", `  then: ssh user@${hostname}`);
+      lines.push(`  on a client with this repo: ./cfproxy ssh user@${hostname}   (installs cloudflared if needed)`, "  or set up plain ssh on the client:", "", "mkdir -p ~/.ssh && cat >> ~/.ssh/config <<EOF", `Host ${hostname}`, "  ProxyCommand cloudflared access ssh --hostname %h", "EOF", "", `  then: ssh user@${hostname}`);
     else lines.push(`  cloudflared access ${scheme} --hostname ${hostname} --url localhost:<port>`, `  then connect your client to localhost:<port>`);
   }
   return lines;

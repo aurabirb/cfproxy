@@ -3,20 +3,20 @@ x-logging: &logging
   options: {max-size: 5m, max-file: "3"}
 
 services:
-  frproxy:
+  cfproxy:
     image: docker.io/oven/bun:1
     user: root
     restart: unless-stopped
     logging: *logging
     command: ["bun", "/app/daemon.ts"]
-    # This host, as the ./frproxy script describes it (src/host.ts sets the host up through these and the mounts below).
-    environment: [FRPROXY_HOSTNAME, FRPROXY_DIR, FRPROXY_BIN, FRPROXY_OS, FRPROXY_ARCH, FRPROXY_PATH]
+    # This host, as the ./cfproxy script describes it (src/host.ts sets the host up through these and the mounts below).
+    environment: [CFPROXY_HOSTNAME, CFPROXY_DIR, CFPROXY_BIN, CFPROXY_OS, CFPROXY_ARCH, CFPROXY_PATH]
     volumes:
       - state:/state
       - ./src:/app:ro,z
       - ./config:/config:z
-      - ./compose.yaml:/host/compose.yaml:ro,z # pins the cloudflared version that frproxy ssh downloads
-      - ${FRPROXY_BIN}:${FRPROXY_BIN}          # same path inside, so paths written there are valid on the host
+      - ./compose.yaml:/host/compose.yaml:ro,z # pins the cloudflared version that cfproxy ssh downloads
+      - ${CFPROXY_BIN}:${CFPROXY_BIN}          # same path inside, so paths written there are valid on the host
       - ${HOME}/.ssh:/host/ssh
 
   cloudflared:

@@ -3,4 +3,4 @@
 *.tmp
 *.lock
 .secrets.yml
-config/frproxy.yml
+config/cfproxy.yml

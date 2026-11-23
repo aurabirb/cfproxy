@@ -1,25 +1,25 @@
 #!/bin/sh
-# Runs frproxy (src/*.ts) in its container. Only what has to happen on the host itself is here: starting the stack and
+# Runs cfproxy (src/*.ts) in its container. Only what has to happen on the host itself is here: starting the stack and
 # keeping it up across reboots, exec'ing ssh, and opening a browser.
-caller=$PWD # `frproxy ssh` runs ssh from here, so relative paths in its arguments (-i ./key) work
+caller=$PWD # `cfproxy ssh` runs ssh from here, so relative paths in its arguments (-i ./key) work
 cd "$(dirname "$(readlink -f "$0")")" || exit
-# This host, for the container: compose.yaml passes these in and mounts $FRPROXY_BIN and ~/.ssh.
-export FRPROXY_HOSTNAME="$(uname -n)" FRPROXY_DIR="$PWD" FRPROXY_BIN="${XDG_BIN_HOME:-$HOME/.local/bin}" \
-  FRPROXY_OS="$(uname -s)" FRPROXY_ARCH="$(uname -m)" FRPROXY_PATH="$PATH"
-mkdir -p "$FRPROXY_BIN" && mkdir -pm 700 "$HOME/.ssh" || exit
+# This host, for the container: compose.yaml passes these in and mounts $CFPROXY_BIN and ~/.ssh.
+export CFPROXY_HOSTNAME="$(uname -n)" CFPROXY_DIR="$PWD" CFPROXY_BIN="${XDG_BIN_HOME:-$HOME/.local/bin}" \
+  CFPROXY_OS="$(uname -s)" CFPROXY_ARCH="$(uname -m)" CFPROXY_PATH="$PATH"
+mkdir -p "$CFPROXY_BIN" && mkdir -pm 700 "$HOME/.ssh" || exit
 
-# Works with docker compose, podman-compose or `podman compose` (rootless included); FRPROXY_COMPOSE overrides.
-if [ -n "$FRPROXY_COMPOSE" ]; then compose=$FRPROXY_COMPOSE
+# Works with docker compose, podman-compose or `podman compose` (rootless included); CFPROXY_COMPOSE overrides.
+if [ -n "$CFPROXY_COMPOSE" ]; then compose=$CFPROXY_COMPOSE
 elif docker compose version >/dev/null 2>&1; then compose="docker compose"
 elif command -v podman-compose >/dev/null; then compose=podman-compose
 elif podman compose version >/dev/null 2>&1; then compose="podman compose"
-else echo "frproxy: need docker compose or podman-compose" >&2; exit 1; fi
+else echo "cfproxy: need docker compose or podman-compose" >&2; exit 1; fi
 # With a tty (no -T) Ctrl-C reaches the container itself instead of orphaning it; -T only when piped.
 if [ -t 0 ]; then notty=; else notty=-T; fi
 # Reuse the background container when it is up (`exec` is much faster than creating a container per command);
 # otherwise fall back to a throwaway one. ./src is bind-mounted, so exec still runs the current code.
-if $compose exec -T frproxy true >/dev/null 2>&1; then run="$compose exec"; else run="$compose run --rm"; fi
-daemon() { $run $notty frproxy bun /app/daemon.ts "$@"; }
+if $compose exec -T cfproxy true >/dev/null 2>&1; then run="$compose exec"; else run="$compose run --rm"; fi
+daemon() { $run $notty cfproxy bun /app/daemon.ts "$@"; }
 
 # Podman ignores `restart: unless-stopped` across reboots: containers only come back if podman-restart.service is
 # enabled, and for rootless podman the user manager must also run without a login session (linger).
@@ -29,19 +29,19 @@ survive_reboot() {
   [ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = true ] || return 0
   systemctl --user is-enabled -q podman-restart.service 2>/dev/null ||
     systemctl --user enable -q podman-restart.service ||
-    echo "frproxy: could not enable podman-restart.service; the tunnel will not come back after a reboot" >&2
+    echo "cfproxy: could not enable podman-restart.service; the tunnel will not come back after a reboot" >&2
   me=$(id -un)
   [ "$(loginctl show-user "$me" -p Linger --value 2>/dev/null)" = yes ] || loginctl enable-linger "$me" 2>/dev/null || {
-    echo "frproxy: enabling linger needs root, running: sudo loginctl enable-linger $me" >&2
+    echo "cfproxy: enabling linger needs root, running: sudo loginctl enable-linger $me" >&2
     sudo loginctl enable-linger "$me"
-  } || echo "frproxy: linger not enabled; the tunnel will only start after you log in" >&2
+  } || echo "cfproxy: linger not enabled; the tunnel will only start after you log in" >&2
 }
 
 # Sync Cloudflare, then run the stack in the background, also after reboots.
 # --force-recreate: ./src is bind-mounted, so without it the daemon would keep running the code it started with.
 start() {
-  daemon apply && $compose up -d --force-recreate frproxy && $compose up -d && survive_reboot &&
-    echo "frproxy: running in the background, restarts after reboot (./frproxy status to check)"
+  daemon apply && $compose up -d --force-recreate cfproxy && $compose up -d && survive_reboot &&
+    echo "cfproxy: running in the background, restarts after reboot (./cfproxy status to check)"
 }
 
 # These recreate the background container, so they must not run in it: it may predate the current compose.yaml.
@@ -52,14 +52,14 @@ case "$#:$1" in
   # The foreground loop (`run`) belongs to the background container: started from here, Ctrl-C would leave it
   # running next to the real daemon. So `run` means apply here.
   1:apply | 1:run) start ;;
-  # Without a token (skipped: a machine that only uses frproxy ssh) there is nothing to serve, so nothing to start.
+  # Without a token (skipped: a machine that only uses cfproxy ssh) there is nothing to serve, so nothing to start.
   1:install) daemon install && if grep -qs '^ *api_token: *[^ ]' config/.secrets.yml; then start; fi ;;
-  # The container sets up ~/.ssh/config for the destination; ssh itself runs here, from where frproxy was called.
+  # The container sets up ~/.ssh/config for the destination; ssh itself runs here, from where cfproxy was called.
   *:ssh) daemon "$@" && shift && cd "$caller" && exec ssh "$@" ;;
   # The browser opens from here (the container has none); the container checks the price and waits.
   2:buy)
     # -T: no pty, so the captured URL has no carriage return.
-    if url=$($run -T frproxy bun /app/daemon.ts buyurl "$2" 2>/dev/null); then
+    if url=$($run -T cfproxy bun /app/daemon.ts buyurl "$2" 2>/dev/null); then
       if command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1 &
       elif command -v open >/dev/null; then open "$url" >/dev/null 2>&1 &
       fi

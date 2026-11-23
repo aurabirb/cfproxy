@@ -1,12 +1,12 @@
-// Setup of the machine running frproxy, done through what compose.yaml mounts from it: its bin directory (at the same
-// path, so paths written here are valid on the host), ~/.ssh and compose.yaml. The ./frproxy script passes the rest in
-// FRPROXY_* variables. Keeping the stack up across reboots is systemd's business and stays in the script.
+// Setup of the machine running cfproxy, done through what compose.yaml mounts from it: its bin directory (at the same
+// path, so paths written here are valid on the host), ~/.ssh and compose.yaml. The ./cfproxy script passes the rest in
+// CFPROXY_* variables. Keeping the stack up across reboots is systemd's business and stays in the script.
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { API, SECRETS_PATH, fail, loadConfig, loadSecrets, serviceUrl } from "./config";
 
 const SSH_CONFIG = "/host/ssh/config";
-const env = (name: string) => process.env[name] || fail(`${name} is not set: run frproxy through the ./frproxy script`);
-const bin = () => env("FRPROXY_BIN");
+const env = (name: string) => process.env[name] || fail(`${name} is not set: run cfproxy through the ./cfproxy script`);
+const bin = () => env("CFPROXY_BIN");
 
 export const TOKEN_STEPS = `
   Create a Cloudflare API token:
@@ -16,18 +16,18 @@ export const TOKEN_STEPS = `
          Account | Cloudflare Tunnel | Edit
          Zone    | Zone              | Edit
          Zone    | DNS               | Edit
-         Account | Account Settings  | Read    (only if you do not set account_id in config/frproxy.yml)
+         Account | Account Settings  | Read    (only if you do not set account_id in config/cfproxy.yml)
     3. Account Resources: Include -> your account.  Zone Resources: Include -> All zones
        (a single zone works once the domain is already on Cloudflare)`;
 
 // --- install ---
 
 export function link() {
-  const target = `${env("FRPROXY_DIR")}/frproxy`;
-  rmSync(`${bin()}/frproxy`, { force: true });
-  symlinkSync(target, `${bin()}/frproxy`);
-  console.log(`linked ${bin()}/frproxy -> ${target}`);
-  if (!env("FRPROXY_PATH").split(":").includes(bin()))
+  const target = `${env("CFPROXY_DIR")}/cfproxy`;
+  rmSync(`${bin()}/cfproxy`, { force: true });
+  symlinkSync(target, `${bin()}/cfproxy`);
+  console.log(`linked ${bin()}/cfproxy -> ${target}`);
+  if (!env("CFPROXY_PATH").split(":").includes(bin()))
     console.log(`${bin()} is not in your PATH; add it:\n  fish:      fish_add_path ${bin()}\n  bash/zsh:  echo 'export PATH="${bin()}:$PATH"' >> ~/.profile`);
 }
 
@@ -43,16 +43,16 @@ function askHidden(question: string) {
   }
 }
 
-// Asks until Cloudflare accepts a token, then saves it; an empty line skips (machines that only use `frproxy ssh` need
-// none). Listing zones works for user and account tokens alike and needs a permission frproxy uses.
+// Asks until Cloudflare accepts a token, then saves it; an empty line skips (machines that only use `cfproxy ssh` need
+// none). Listing zones works for user and account tokens alike and needs a permission cfproxy uses.
 // Returns whether there is a token now.
 export async function askToken() {
   if (loadSecrets().apiToken) return true;
-  if (!process.stdin.isTTY) return console.log("no Cloudflare API token yet: run ./frproxy install in a terminal to enter it"), false;
-  console.log(`\nServing tunnels from this machine needs a Cloudflare API token (machines that only use frproxy ssh do not).${TOKEN_STEPS}`);
+  if (!process.stdin.isTTY) return console.log("no Cloudflare API token yet: run ./cfproxy install in a terminal to enter it"), false;
+  console.log(`\nServing tunnels from this machine needs a Cloudflare API token (machines that only use cfproxy ssh do not).${TOKEN_STEPS}`);
   for (;;) {
     const token = askHidden("Paste the token (hidden; Enter to skip):");
-    if (!token) return console.log("skipped; ./frproxy install asks again"), false;
+    if (!token) return console.log("skipped; ./cfproxy install asks again"), false;
     const accepted = /^[\w-]+$/.test(token) && (await fetch(`${API}/zones?per_page=1`, { headers: { Authorization: `Bearer ${token}` } })).ok;
     if (!accepted) {
       console.log("Cloudflare rejected that token (or it cannot read zones); try again");
@@ -71,10 +71,10 @@ export async function installCloudflared() {
   const path = `${bin()}/cloudflared`;
   if (existsSync(path)) return path;
   const version = readFileSync("/host/compose.yaml", "utf8").match(/cloudflare\/cloudflared:([\d.]+)/)![1];
-  const os = env("FRPROXY_OS").toLowerCase();
-  const cpu = ({ x86_64: "amd64", aarch64: "arm64", arm64: "arm64", armv7l: "arm", armv6l: "arm", i686: "386" } as Record<string, string>)[env("FRPROXY_ARCH")];
+  const os = env("CFPROXY_OS").toLowerCase();
+  const cpu = ({ x86_64: "amd64", aarch64: "arm64", arm64: "arm64", armv7l: "arm", armv6l: "arm", i686: "386" } as Record<string, string>)[env("CFPROXY_ARCH")];
   if (!cpu || (os !== "linux" && os !== "darwin"))
-    fail(`no cloudflared download for ${os} ${env("FRPROXY_ARCH")}: install it as ${path} (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)`);
+    fail(`no cloudflared download for ${os} ${env("CFPROXY_ARCH")}: install it as ${path} (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)`);
   const asset = `cloudflared-${os}-${cpu}${os === "darwin" ? ".tgz" : ""}`; // macOS builds come packed
   console.error(`installing cloudflared ${version} as ${path}`);
   const res = await fetch(`https://github.com/cloudflare/cloudflared/releases/download/${version}/${asset}`);
@@ -135,7 +135,7 @@ export function sshDestination(args: string[]) {
     if (!args[i].startsWith("-")) return args[i].replace(/^ssh:\/\//, "").replace(/^.*@/, "").replace(/:\d+$/, "");
     if (/^-[^-]*[BbcDEeFIiJLlmOoPpQRSWw]$/.test(args[i])) i++; // ends in an option that takes a value: skip it
   }
-  return fail("usage: frproxy ssh [ssh options] [user@]hostname [command]");
+  return fail("usage: cfproxy ssh [ssh options] [user@]hostname [command]");
 }
 
 // Makes plain `ssh <host>` work here (by default for every SSH tunnel in the config): cloudflared, plus a ProxyCommand
@@ -150,7 +150,7 @@ export async function setupSsh(hosts = sshHosts()) {
     const cloudflared = await installCloudflared();
     if (proxy) continue;
     const text = existsSync(SSH_CONFIG) ? readFileSync(SSH_CONFIG, "utf8") : "";
-    const block = `\n# added by frproxy: ${host} is an SSH tunnel through Cloudflare\nHost ${host}\n  ProxyCommand ${cloudflared} access ssh --hostname %h\n`;
+    const block = `\n# added by cfproxy: ${host} is an SSH tunnel through Cloudflare\nHost ${host}\n  ProxyCommand ${cloudflared} access ssh --hostname %h\n`;
     appendFileSync(SSH_CONFIG, (text && !text.endsWith("\n") ? "\n" : "") + block, { mode: 0o600 });
     console.log(`added ${host} to ~/.ssh/config, so plain ssh to it works from this machine`);
   }
