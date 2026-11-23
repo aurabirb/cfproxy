@@ -59,7 +59,7 @@ cloudflare:
 
 ## Quick tunnels (no domain)
 
-A name without a dot (`./cfproxy add 3000 myapp`, or `./cfproxy add 3000` for `port-3000`) is a
+A name without a dot (`./cfproxy add 3000 myapp`) is a
 [quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/):
 no domain or token. `add` and `status` print its URL, which changes whenever the tunnel restarts. Cloudflare offers
 them for testing: no uptime guarantee, at most 200 requests in flight, no server-sent events.
@@ -92,8 +92,8 @@ Each machine serves its own hostnames through its own tunnel, all on one Cloudfl
 
 ## Commands
 
-- `./cfproxy install`: link `cfproxy` into ~/.local/bin, ask for the Cloudflare API token if there is none, then start like `apply`
-- `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`); a name without a dot, or none, is a quick tunnel
+- `./cfproxy install`: link `cfproxy` into ~/.local/bin, ask for the Cloudflare API token if there is none, then start like `apply` (on machines that serve tunnels; clients only need `./cfproxy ssh`)
+- `./cfproxy add :8080 app.example.com`: expose a port, `host:port` or URL (edits `config/cfproxy.yml`, previous versions kept as numbered `cfproxy.yml.N.bak`); a name without a dot is a quick tunnel
 - `./cfproxy rm app.example.com`: stop exposing it
 - `./cfproxy status`: zone, tunnel and per-tunnel DNS/ingress state, quick tunnel URLs, and whether ssh to each SSH tunnel works from here
 - `./cfproxy plan`: show what `apply` would change, change nothing

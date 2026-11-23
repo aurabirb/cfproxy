@@ -47,13 +47,6 @@ export const serviceUrl = (addr: string | number) => {
 export const isQuick = (name: string) => !name.includes(".");
 export const namedTunnels = (tunnels: Tunnels) => Object.entries(tunnels).filter(([name]) => !isQuick(name));
 
-// The name `add` gives a quick tunnel when none is given: port-3000 for a bare port, else the address made safe.
-export const defaultName = (addr: string) => {
-  const target = addr.replace(/^:/, "");
-  const slug = target.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return isPort(target) ? `port-${slug}` : slug;
-};
-
 function normalize(host: string, addr: string | number): [string, string | number] {
   const hostname = host.toLowerCase();
   if (hostname.endsWith(".example.com")) fail(`Replace the example hostname ${hostname} in config/cfproxy.yml with your own domain.`);
@@ -148,7 +141,7 @@ const edit = (change: (tunnels: Tunnels) => string) =>
     console.log(message);
   });
 
-export const add = async ([addr, name = defaultName(addr)]: string[]) => {
+export const add = async ([addr, name]: string[]) => {
   let hints: string[] = [];
   await edit((tunnels) => {
     const [host, target] = normalize(name, addr);

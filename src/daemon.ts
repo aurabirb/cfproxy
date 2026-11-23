@@ -291,11 +291,10 @@ const commands: Record<string, Command> = {
   buyurl: { args: "<domain>", desc: "print the Cloudflare purchase URL for <domain> (used by buy)", run: buyLink },
   buy: { args: "<domain>", desc: "open Cloudflare Registrar to buy <domain>, then wait until it is in your account", run: buy },
   status: { args: "", desc: "show zone, tunnel and per-tunnel state", run: () => status(loadConfig()) },
-  add: { args: "<addr> [hostname]", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>; a name without dots (or none) is a quick tunnel", run: async (args) => (await add(args), setupSsh()) },
+  add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>; a name without dots is a quick tunnel", run: async (args) => (await add(args), setupSsh()) },
   rm: { args: "<hostname>", desc: "stop exposing <hostname> (or quick tunnel name)", run: rm },
   compose: { args: "", desc: "write config/compose.tunnels.yaml.new, the cloudflared containers (used by add, rm and apply)", run: quick.writeCompose },
-  url: { args: "<addr> [hostname]", desc: "wait for the URL of the quick tunnel add just started, and print it", run: quick.printUrl },
-  serves: { args: "", desc: "exit 0 if this machine has something to serve (a token or a quick tunnel)", run: () => { if (!loadSecrets().apiToken && !quick.hasQuickTunnels()) process.exit(1); } },
+  url: { args: "<addr> <hostname>", desc: "wait for the URL of the quick tunnel add just started, and print it", run: quick.printUrl },
   install: { args: "", desc: "link cfproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
   ssh: { args: "[alias=<quick tunnel>] <ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args; alias=<words>[.trycloudflare.com] names a quick tunnel (ssh args optional)", run: (args) => (isAlias(args[0]) ? setupAlias(args[0]) : setupSsh([sshDestination(args)])) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
@@ -311,9 +310,8 @@ function usage() {
 const [given = "run", ...args] = process.argv.slice(2);
 const name = given === "-h" || given === "--help" ? "help" : given;
 const command = commands[name];
-// "..." marks a command that takes any arguments, [brackets] an optional one.
-const params = command?.args.split(" ").filter(Boolean) ?? [];
-if (!command || (!command.args.includes("...") && (args.length < params.filter((p) => !p.startsWith("[")).length || args.length > params.length))) {
+// "..." marks a command that takes any arguments.
+if (!command || (!command.args.includes("...") && args.length !== command.args.split(" ").filter(Boolean).length)) {
   console.error(command ? `usage: cfproxy ${name} ${command.args}` : usage());
   process.exit(1);
 }

@@ -68,8 +68,8 @@ case "$#:$1" in
   # The foreground loop (`run`) belongs to the background container: started from here, Ctrl-C would leave it
   # running next to the real daemon. So `run` means apply here.
   1:apply | 1:run) start ;;
-  # Without a token or a quick tunnel (a machine that only uses cfproxy ssh) there is nothing to serve or start.
-  1:install) daemon install && if daemon serves; then start; fi ;;
+  # For machines that serve tunnels; a client only needs ./cfproxy ssh.
+  1:install) daemon install && start ;;
   # The containers change right away; then a new quick tunnel's URL is printed once Cloudflare assigns it.
   *:add) daemon "$@" && up && shift && daemon url "$@" ;;
   *:rm) daemon "$@" && up ;;

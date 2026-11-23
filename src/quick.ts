@@ -6,7 +6,7 @@
 // The daemon cannot run compose itself, so ./cfproxy swaps the file in and starts them: this writes the next version
 // beside it (.new), and ./cfproxy removes the services that are gone and brings up the rest.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { defaultName, fail, isQuick, loadConfig, loadSecrets, serviceUrl } from "./config";
+import { fail, isQuick, loadConfig, loadSecrets, serviceUrl } from "./config";
 
 export const COMPOSE_PATH = "/config/compose.tunnels.yaml";
 const BASE_PATH = "/host/compose.yaml";
@@ -70,9 +70,6 @@ function pendingChanges() {
 
 export const printPlan = () => pendingChanges().forEach((change) => console.log(`(plan) ~ ${change}`));
 
-// For ./cfproxy install: whether there is anything to start without a token.
-export const hasQuickTunnels = () => quickTunnels().length > 0;
-
 // --- quick tunnels as they run now ---
 
 type QuickState = { name: string; service: string; url?: string; state: string };
@@ -110,7 +107,7 @@ export async function printStatus() {
 
 // After ./cfproxy add started it (same arguments as add): Cloudflare assigns the hostname within seconds of the
 // container connecting. An SSH tunnel also gets the command that sets up a client for it.
-export async function printUrl([addr, name = defaultName(addr)]: string[]) {
+export async function printUrl([, name]: string[]) {
   if (!isQuick(name)) return;
   let tunnel: QuickState | undefined;
   for (const until = Date.now() + 30_000; !tunnel?.url && Date.now() < until; await Bun.sleep(1000))

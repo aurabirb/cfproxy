@@ -43,13 +43,13 @@ function askHidden(question: string) {
   }
 }
 
-// Asks until Cloudflare accepts a token, then saves it; an empty line skips (machines that only use `cfproxy ssh` need
-// none). Listing zones works for user and account tokens alike and needs a permission cfproxy uses.
+// Asks until Cloudflare accepts a token, then saves it; an empty line skips (quick tunnels need none).
+// Listing zones works for user and account tokens alike and needs a permission cfproxy uses.
 // Returns whether there is a token now.
 export async function askToken() {
   if (loadSecrets().apiToken) return true;
   if (!process.stdin.isTTY) return console.log("no Cloudflare API token yet: run ./cfproxy install in a terminal to enter it"), false;
-  console.log(`\nServing your own domain from this machine needs a Cloudflare API token (quick tunnels and cfproxy ssh do not).${TOKEN_STEPS}`);
+  console.log(`\nServing your own domain from this machine needs a Cloudflare API token (quick tunnels do not).${TOKEN_STEPS}`);
   for (;;) {
     const token = askHidden("Paste the token (hidden; Enter to skip):");
     if (!token) return console.log("skipped; ./cfproxy install asks again. Without one: ./cfproxy add 3000 myapp gives a quick tunnel"), false;
