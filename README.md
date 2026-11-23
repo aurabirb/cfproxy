@@ -11,15 +11,19 @@ git clone https://github.com/aurabirb/cfproxy.git && cd cfproxy
 
 # Without a domain (completely free):
 ./cfproxy add 3000 myapp                # prints https://<random-words>.trycloudflare.com -> localhost:3000 (new words on restart)
-./cfproxy add 22 nas                    # SSH; prints the command for the client: ./cfproxy ssh nas=<random-words>[.trycloudflare.com]
-./cfproxy ssh nas=<random-words>[.trycloudflare.com]  # on a client: alias nas in ~/.ssh/config (rerun with new words after a restart)
-rsync -a photos/ you@nas:photos/        # ssh, scp, rsync and git all work with the alias
+./cfproxy add 22 nas                    # SSH; prints the client command: ./cfproxy ssh nas=<user>@<random-words>
+./cfproxy rm myapp                      # stop exposing it (hostnames on your domain too)
 
 # Using your own domain:
 ./cfproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000, live within seconds
 ./cfproxy add 22 box.example.com        # SSH; also makes plain `ssh box.example.com` work on this machine
 ./cfproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
-./cfproxy ssh you@box.example.com       # run once on a client to set up ssh access through cloudflared
+
+# Connecting with SSH (on a client; each sets up ~/.ssh/config and cloudflared, then connects):
+./cfproxy ssh you@box.example.com       # a hostname on your domain; plain `ssh box.example.com` works after
+./cfproxy ssh nas=you@<random-words>[.trycloudflare.com]   # an alias, to a quick tunnel or any hostname; `ssh nas` works after
+./cfproxy ssh nas                       # through the alias (rerun the line above with the new words after a restart)
+rsync -a photos/ nas:photos/            # scp, rsync and git work with both
 ```
 
 Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
@@ -66,8 +70,9 @@ cloudflare:
 
 ## Several machines
 
-Each machine serves its own hostnames through its own tunnel, all on one Cloudflare account. Quick tunnels are not
-shared: each machine runs its own, with its own random hostname, so two machines can use the same name.
+Each machine serves its own hostnames through its own tunnel, all on one Cloudflare account.
+
+Quick tunnels are not shared: each machine runs its own, with its own random hostname.
 
 ```sh
 # on each machine, with the same token:
@@ -77,6 +82,9 @@ shared: each machine runs its own, with its own random hostname, so two machines
 # move a name to another machine:
 ./cfproxy rm nas.example.com            # on the old machine first
 ./cfproxy add 3000 nas.example.com      # then on the new one (before the rm, its sync stops: "already served by ...")
+
+# quick tunnels: the same alias on every client keeps one ssh command, whichever machine serves it
+./cfproxy ssh nas=you@<random-words>    # rerun with the new words when it moves or restarts; then `ssh nas` everywhere
 ```
 
 ## Commands
@@ -88,7 +96,8 @@ shared: each machine runs its own, with its own random hostname, so two machines
 - `./cfproxy status`: zone, tunnel and per-tunnel DNS/ingress state, quick tunnel URLs, and whether ssh to each SSH tunnel works from here
 - `./cfproxy plan`: show what `apply` would change, change nothing
 - `./cfproxy apply`: sync Cloudflare, then start (or refresh) the tunnels in the background; aborts on any error
-- `./cfproxy ssh [alias=<quick tunnel>] [ssh args]`: set up plain ssh to a tunnel on this machine (or the alias), then run ssh with the args
+- `./cfproxy ssh [user@]host [ssh args]`: set up plain ssh to a tunnel hostname, or connect through an alias set up before, then run ssh with the args
+- `./cfproxy ssh alias=[user@]host [ssh args]`: point an ssh alias at a hostname or a quick tunnel's `<words>[.trycloudflare.com]` (again to update it), then `ssh alias`
 - `./cfproxy buy <domain>`: open Cloudflare Registrar in your browser, wait until the domain is in your account, then exit 0 (so `./cfproxy buy x.com && ./cfproxy add 3000 app.x.com` works). Giving the token Registrar read permission also shows availability and price first
 - `./cfproxy help`
 

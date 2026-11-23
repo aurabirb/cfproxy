@@ -296,7 +296,7 @@ const commands: Record<string, Command> = {
   compose: { args: "", desc: "write config/compose.tunnels.yaml.new, the cloudflared containers (used by add, rm and apply)", run: quick.writeCompose },
   url: { args: "<addr> <hostname>", desc: "wait for the URL of the quick tunnel add just started, and print it", run: quick.printUrl },
   install: { args: "", desc: "link cfproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
-  ssh: { args: "[alias=<quick tunnel>] <ssh args...>", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh with the args; alias=<words>[.trycloudflare.com] names a quick tunnel (ssh args optional)", run: (args) => (isAlias(args[0]) ? setupAlias(args[0]) : setupSsh([sshDestination(args)])) },
+  ssh: { args: "<[user@]host | alias=[user@]host> [ssh args...]", desc: "set up plain ssh to a tunnel on this machine (cloudflared, ~/.ssh/config), then run ssh; alias= points an alias at a hostname or a quick tunnel's <words>[.trycloudflare.com]", run: (args) => (isAlias(args[0]) ? setupAlias(args[0]) : setupSsh([sshDestination(args)])) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };
 

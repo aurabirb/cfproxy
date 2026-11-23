@@ -74,10 +74,10 @@ case "$#:$1" in
   *:add) daemon "$@" && up && shift && daemon url "$@" ;;
   *:rm) daemon "$@" && up ;;
   # The container sets up ~/.ssh/config for the destination; ssh itself runs here, from where cfproxy was called.
-  # An alias=<quick tunnel> argument is only for the container, and without further arguments ssh is not run.
+  # alias=[user@]host: once the container has set up the alias, ssh connects to the alias.
   *:ssh)
     daemon "$@" && shift || exit
-    case "$1" in [!-]*=*) shift; [ $# -gt 0 ] || exit 0 ;; esac
+    case "$1" in [!-]*=*) alias=${1%%=*}; shift; set -- "$alias" "$@" ;; esac
     cd "$caller" && exec ssh "$@" ;;
   # The browser opens from here (the container has none); the container checks the price and waits.
   2:buy)

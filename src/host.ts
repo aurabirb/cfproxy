@@ -139,24 +139,26 @@ export function sshDestination(args: string[]) {
   return fail("usage: cfproxy ssh [ssh options] [user@]hostname [command]");
 }
 
-// `cfproxy ssh box=<words>[.trycloudflare.com]`: a quick tunnel's hostname changes whenever it restarts, so it gets a
-// fixed alias for ssh, scp, rsync and git. Running it again with the new hostname updates the alias in place.
+// `cfproxy ssh nas=[user@]<host>`: a fixed alias for ssh, scp, rsync and git, to a hostname on your domain or a quick
+// tunnel's <words>[.trycloudflare.com]. A quick tunnel's hostname changes whenever it restarts: running it again with
+// the new one updates the alias in place.
 export const isAlias = (arg = "") => /^[^-=@][^=@]*=/.test(arg);
 
 export async function setupAlias(arg: string) {
-  const [alias, target] = arg.toLowerCase().split("=", 2);
-  if (!/^[\w-]+$/.test(alias) || !/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(target)) fail(`'${arg}': use alias=<words> or alias=<words>.trycloudflare.com`);
-  const hostname = target.includes(".") ? target : `${target}.trycloudflare.com`;
-  const note = `# added by cfproxy for a quick tunnel: cfproxy ssh ${alias}=<new hostname> updates it`;
-  const ours = new RegExp(`\n${note}\nHost ${alias}\n  HostName \\S+\n  ProxyCommand .*\n`);
+  const [alias, dest] = arg.split("=", 2).map((s, i) => (i ? s : s.toLowerCase()));
+  const [, user, target] = dest.match(/^(?:([\w.-]+)@)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)$/) ?? [];
+  if (!/^[\w-]+$/.test(alias) || !target) fail(`'${arg}': use alias=[user@]<words>[.trycloudflare.com] or alias=[user@]<hostname>`);
+  const hostname = target.includes(".") ? target.toLowerCase() : `${target.toLowerCase()}.trycloudflare.com`;
+  const note = `# added by cfproxy: cfproxy ssh ${alias}=<new hostname> updates it`;
+  const ours = new RegExp(`\n${note}\nHost ${alias}\n  HostName \\S+\n(  User \\S+\n)?  ProxyCommand .*\n`);
   const text = existsSync(SSH_CONFIG) ? readFileSync(SSH_CONFIG, "utf8") : "";
   // Someone else's settings for this alias are left alone: Host lines naming it, or a proxy that applies to it.
   const rest = text.replace(ours, "");
   const named = rest.split("\n").some((line) => /^\s*host\s/i.test(line) && line.trim().split(/\s+/).slice(1).includes(alias));
   if (rest === text && (named || sshProxy(alias))) fail(`~/.ssh/config already has settings for ${alias}; pick another alias, or remove them first`);
-  const block = `\n${note}\nHost ${alias}\n  HostName ${hostname}\n  ProxyCommand ${await installCloudflared()} access ssh --hostname %h\n`;
+  const block = `\n${note}\nHost ${alias}\n  HostName ${hostname}\n${user ? `  User ${user}\n` : ""}  ProxyCommand ${await installCloudflared()} access ssh --hostname %h\n`;
   writeFileSync(SSH_CONFIG, `${rest}${rest && !rest.endsWith("\n") ? "\n" : ""}${block}`, { mode: 0o600 });
-  console.log(`${alias} -> ${hostname} in ~/.ssh/config: ssh, scp and rsync work with it (rsync -a dir/ ${alias}:dir/)`);
+  console.log(`${alias} -> ${user ? `${user}@` : ""}${hostname} in ~/.ssh/config: ssh ${alias}, scp and rsync work with it`);
 }
 
 // Makes plain `ssh <host>` work here (by default for every SSH tunnel in the config): cloudflared, plus a ProxyCommand
@@ -168,6 +170,8 @@ export async function setupSsh(hosts = sshHosts()) {
       console.log(`${host} already has a ProxyCommand or ProxyJump in ~/.ssh/config; left it alone`);
       continue;
     }
+    // A name without a dot is a quick tunnel's name, which only its own machine knows the hostname for.
+    if (!proxy && !host.includes(".")) fail(`${host} is not set up for ssh here yet: run ./cfproxy ssh ${host}=[user@]<its hostname> (add prints it)`);
     const cloudflared = await installCloudflared();
     if (proxy) continue;
     const text = existsSync(SSH_CONFIG) ? readFileSync(SSH_CONFIG, "utf8") : "";
