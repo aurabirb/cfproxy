@@ -5,6 +5,22 @@ docker or podman. Just starts two small containers, a sync daemon and `cloudflar
 
 ## Example
 
+Create a Cloudflare API token:
+
+1. [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) → **Create Token** →
+   **Create Custom Token** (an account token, from Manage Account → API Tokens, works too)
+2. Permissions:
+
+   | Scope   | Resource          | Access |
+   | ------- | ----------------- | ------ |
+   | Account | Cloudflare Tunnel | Edit   |
+   | Zone    | Zone              | Edit   |
+   | Zone    | DNS               | Edit   |
+   | Account | Account Settings  | Read (only if you do not set `account_id` in `config/frproxy.yml`) |
+
+3. **Account Resources:** Include → your account. **Zone Resources:** Include → All zones
+   (a single zone works once the domain is already on Cloudflare)
+
 ```sh
 git clone https://github.com/aurabirb/frproxy.git && cd frproxy
 ./frproxy install                       # link into ~/.local/bin, ask for your Cloudflare API token, start (survives reboots)
@@ -14,25 +30,6 @@ git clone https://github.com/aurabirb/frproxy.git && cd frproxy
 ./frproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
 
 ./frproxy ssh you@box.example.com       # run once on a client to set up ssh access through cloudflared
-```
-
-### Getting a Cloudflare token
-
-`./frproxy install` asks for it like this (Enter skips it on a client that only uses `frproxy ssh`):
-
-```
-Serving tunnels from this machine needs a Cloudflare API token (machines that only use frproxy ssh do not).
-  Create a Cloudflare API token:
-    1. https://dash.cloudflare.com/profile/api-tokens -> Create Token -> Create Custom Token
-       (an account token, from Manage Account -> API Tokens, works too)
-    2. Permissions:
-         Account | Cloudflare Tunnel | Edit
-         Zone    | Zone              | Edit
-         Zone    | DNS               | Edit
-         Account | Account Settings  | Read    (only if you do not set account_id in config/frproxy.yml)
-    3. Account Resources: Include -> your account.  Zone Resources: Include -> All zones
-       (a single zone works once the domain is already on Cloudflare)
-Paste the token (hidden; Enter to skip):
 ```
 
 Cloudflare only proxies HTTP for plain clients, so SSH needs `cloudflared` on the machine you connect from.
