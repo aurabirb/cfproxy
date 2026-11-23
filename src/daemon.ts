@@ -6,17 +6,8 @@ const API = "https://api.cloudflare.com/client/v4";
 const TOKEN_FILE = "/state/token";
 const OWN_PREFIX = "frproxy-";
 
-const TOKEN_HELP = `
-  Create a Cloudflare API token:
-    1. https://dash.cloudflare.com/profile/api-tokens -> Create Token -> Create Custom Token
-    2. Permissions:
-         Account | Cloudflare Tunnel | Edit
-         Zone    | Zone              | Edit
-         Zone    | DNS               | Edit
-         Account | Account Settings  | Read    (only if you do not set account_id in config/frproxy.yml)
-    3. Account Resources: Include -> your account.  Zone Resources: Include -> All zones
-       (a single zone works once the domain is already on Cloudflare)
-    4. Put the token in config/.secrets.yml (see .secrets.yml.example); it is re-read automatically.`;
+// Shared with the ./frproxy script, which prints it when `install` asks for the token.
+const TOKEN_HELP = `\n${readFileSync(new URL("./token-help.txt", import.meta.url), "utf8").trimEnd()}`;
 
 // --- Cloudflare API ---
 
@@ -288,7 +279,7 @@ const commands: Record<string, Command> = {
   rm: { args: "<hostname>", desc: "stop exposing <hostname>", run: rm },
   sshhosts: { args: "", desc: "print the hostnames that are SSH tunnels (used by apply and status)", run: () => { for (const [host, addr] of Object.entries(loadConfig().tunnels)) if (serviceUrl(addr).startsWith("ssh://")) console.log(host); } },
   ssh: { args: "<ssh args...>", desc: "ssh through a tunnel from any machine: installs cloudflared if needed, passes the rest to ssh", run: () => fail("ssh runs from the ./frproxy script on the host, not inside the container") },
-  install: { args: "", desc: "link frproxy into ~/.local/bin so it works from any directory", run: () => fail("install runs from the ./frproxy script on the host, not inside the container") },
+  install: { args: "", desc: "link frproxy into ~/.local/bin and ask for the Cloudflare API token if there is none", run: () => fail("install runs from the ./frproxy script on the host, not inside the container") },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };
 

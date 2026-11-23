@@ -12,14 +12,10 @@ A fresh Linux box (`box`) with docker or podman, serving a web app on port 3000 
 
 ```sh
 git clone https://github.com/aurabirb/frproxy.git && cd frproxy
-./frproxy install                       # optional: `frproxy` from any directory (links into ~/.local/bin)
+./frproxy install                       # links `frproxy` into ~/.local/bin, asks for your Cloudflare API token
 
 ./frproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000 (creates config/frproxy.yml)
 ./frproxy add 22 box.example.com        # SSH; prints what clients need
-
-./frproxy plan                          # no token yet: prints how to create one
-cp config/.secrets.yml.example config/.secrets.yml
-$EDITOR config/.secrets.yml             # paste the token after api_token:
 
 ./frproxy plan                          # preview: + tunnel frproxy-box, ingress, + CNAME app/box.example.com
 ./frproxy apply                         # sync Cloudflare, start the tunnel in the background, survive reboots
@@ -35,7 +31,8 @@ rsync -av -e "./frproxy ssh" ./site/ you@box.example.com:site/  # anything that 
 `./frproxy` alone lists all commands.
 
 The token needs Account | Cloudflare Tunnel | Edit, Zone | Zone | Edit, Zone | DNS | Edit and Account | Account Settings |
-Read; Account Resources: your account, Zone Resources: All zones (`plan` prints these steps). `config/.secrets.yml` is
+Read; Account Resources: your account, Zone Resources: All zones. `install` prints these steps and checks the token with
+Cloudflare before saving it to `config/.secrets.yml`; Enter skips it on machines that only use `frproxy ssh`. The file is
 re-read on every use (and wakes the daemon), so fixing a token needs no restart. Any error aborts `apply` before anything
 is started.
 If a hostname's domain is not on Cloudflare yet, `apply` creates the zone (the last two labels of the hostname, so
@@ -91,6 +88,7 @@ the old tunnel named `frproxy` is left behind and can be deleted in the Cloudfla
 - `./frproxy status`: zone, tunnel and per-tunnel DNS/ingress state
 - `./frproxy add :8080 wrong.example.com`: expose a port, `host:port` or URL (edits `config/frproxy.yml`, previous versions kept as numbered `frproxy.yml.N.bak`)
 - `./frproxy rm wrong.example.com`: stop exposing it
+- `./frproxy install`: link `frproxy` into ~/.local/bin and ask for the Cloudflare API token if there is none
 - `./frproxy ssh [ssh args]`: ssh through an SSH tunnel from any machine, installing cloudflared first if needed
 - `./frproxy help`
 

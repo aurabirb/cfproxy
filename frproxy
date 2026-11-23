@@ -75,12 +75,45 @@ if [ "$1" = ssh ]; then
   exec ssh -o "ProxyCommand=$cf access ssh --hostname %h" "$@"
 fi
 
-# ./frproxy install: link this checkout into ~/.local/bin so `frproxy` works from any directory.
+# --- the Cloudflare token (host side too: install runs on machines without docker or podman) ---
+
+secrets=config/.secrets.yml
+has_token() { [ -n "$(sed -n 's/^[[:space:]]*api_token:[[:space:]]*//p' "$secrets" 2>/dev/null)" ]; }
+
+# Asks for the token until Cloudflare accepts it, then writes $secrets. Skippable: clients that only use
+# `frproxy ssh` need no token.
+ask_token() {
+  has_token && return
+  if [ ! -t 0 ]; then echo "frproxy: no Cloudflare API token yet; run ./frproxy install in a terminal to enter it"; return; fi
+  echo
+  echo "Serving tunnels from this machine needs a Cloudflare API token (machines that only use frproxy ssh do not)."
+  sed '/^    4\./,$d' src/token-help.txt # step 4 says to run install, which is what is running
+  trap 'stty echo; echo; exit 130' INT
+  while :; do
+    printf 'Paste the token (hidden; Enter to skip): '
+    stty -echo; IFS= read -r token; stty echo; echo
+    [ -n "$token" ] || { echo "skipped; ./frproxy install asks again"; break; }
+    case $token in *[!A-Za-z0-9_-]*) echo "that does not look like a Cloudflare token; try again"; continue ;; esac
+    # Cloudflare's own check; without curl the token is saved unchecked and the first plan reports a bad one.
+    if command -v curl >/dev/null &&
+      ! curl -fsS -o /dev/null -H "Authorization: Bearer $token" https://api.cloudflare.com/client/v4/user/tokens/verify 2>/dev/null; then
+      echo "Cloudflare does not accept that token; try again"; continue
+    fi
+    (umask 077 && sed "s|^\([[:space:]]*api_token:\).*|\1 $token|" config/.secrets.yml.example >"$secrets.tmp") &&
+      mv "$secrets.tmp" "$secrets" && echo "saved to $secrets"
+    break
+  done
+  trap - INT
+}
+
+# ./frproxy install: link this checkout into ~/.local/bin so `frproxy` works from any directory, then ask for the
+# Cloudflare token if there is none yet.
 if [ "$1" = install ] && [ $# = 1 ]; then
   mkdir -p "$bin" && ln -sf "$here/frproxy" "$bin/frproxy" && echo "linked $bin/frproxy -> $here/frproxy"
   case ":$PATH:" in *":$bin:"*) ;; *) echo "$bin is not in your PATH; add it:"
     echo "  fish:      fish_add_path $bin"
     echo "  bash/zsh:  echo 'export PATH=\"$bin:\$PATH\"' >> ~/.profile" ;; esac
+  ask_token
   exit
 fi
 # Works with docker compose, podman-compose or `podman compose` (rootless included); FRPROXY_COMPOSE overrides.

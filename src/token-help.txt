@@ -1,0 +1,11 @@
+  Create a Cloudflare API token:
+    1. https://dash.cloudflare.com/profile/api-tokens -> Create Token -> Create Custom Token
+    2. Permissions:
+         Account | Cloudflare Tunnel | Edit
+         Zone    | Zone              | Edit
+         Zone    | DNS               | Edit
+         Account | Account Settings  | Read    (only if you do not set account_id in config/frproxy.yml)
+    3. Account Resources: Include -> your account.  Zone Resources: Include -> All zones
+       (a single zone works once the domain is already on Cloudflare)
+    4. Run ./frproxy install, which asks for it, or put it in config/.secrets.yml (see .secrets.yml.example);
+       it is re-read automatically.
