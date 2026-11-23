@@ -6,9 +6,9 @@ import { dirname } from "node:path";
 export type Tunnels = Record<string, string | number>;
 export type Config = { tunnels: Tunnels; name?: string; accountId?: string };
 
+export const API = "https://api.cloudflare.com/client/v4";
 export const CONFIG_PATH = "/config/frproxy.yml";
 export const SECRETS_PATH = "/config/.secrets.yml";
-const HOSTNAME_PATH = "/host/hostname"; // the host's /etc/hostname, mounted read-only by compose.yaml
 const HEADER = `# Edit and save: changes apply within seconds.
 
 # hostname -> where to send traffic: a port, host:port or a URL.
@@ -65,11 +65,7 @@ export function loadConfig(): Config {
 // The name defaults to the host's hostname; `name:` in frproxy.yml overrides it.
 export function tunnelName(name?: string) {
   if (name) return `frproxy-${name}`;
-  let host = "";
-  try {
-    host = readFileSync(HOSTNAME_PATH, "utf8");
-  } catch {}
-  const suffix = host.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const suffix = (process.env.FRPROXY_HOSTNAME ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `frproxy-${suffix || fail("Could not read this machine's hostname; set `name:` in config/frproxy.yml")}`;
 }
 

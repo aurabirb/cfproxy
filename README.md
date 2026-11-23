@@ -12,13 +12,10 @@ A fresh Linux box (`box`) with docker or podman, serving a web app on port 3000 
 
 ```sh
 git clone https://github.com/aurabirb/frproxy.git && cd frproxy
-./frproxy install                       # links `frproxy` into ~/.local/bin, asks for your Cloudflare API token
+./frproxy install                       # link into ~/.local/bin, ask for your Cloudflare API token, start (survives reboots)
 
-./frproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000 (creates config/frproxy.yml)
-./frproxy add 22 box.example.com        # SSH; prints what clients need
-
-./frproxy plan                          # preview: + tunnel frproxy-box, ingress, + CNAME app/box.example.com
-./frproxy apply                         # sync Cloudflare, start the tunnel in the background, survive reboots
+./frproxy add 3000 app.example.com      # https://app.example.com -> localhost:3000, live within seconds
+./frproxy add 22 box.example.com        # SSH; also makes plain `ssh box.example.com` work on this machine
 ./frproxy status                        # tunnel healthy, dns/ingress ok, ssh box.example.com from this machine: ok
 
 ./frproxy ssh you@box.example.com       # from any machine with a checkout; fetches cloudflared on first use
@@ -52,12 +49,12 @@ tunnels:
 A bare port 22 (`22` or `host:22`) is treated as SSH (`ssh://`). Cloudflare only proxies HTTP for plain clients, so SSH
 needs `cloudflared` on the machine you connect from:
 
-- On any machine with a checkout (no containers or config needed): `./frproxy ssh user@box.example.com` downloads the
-  `cloudflared` release that `compose.yaml` pins into `~/.local/bin` if there is none, then runs ssh through it. All
-  arguments go to ssh.
-- `./frproxy apply` makes plain `ssh` work on the machine running it: it installs `cloudflared` the same way and appends a
-  `Host … ProxyCommand cloudflared access ssh` block to `~/.ssh/config` for each SSH tunnel, unless ssh already has a
-  ProxyCommand or ProxyJump for it.
+- On any machine with a checkout: `./frproxy ssh user@box.example.com` downloads the `cloudflared` release that
+  `compose.yaml` pins into `~/.local/bin` if there is none (this one step runs in the container, so it needs docker or
+  podman; no config or token), then runs ssh through it. All arguments go to ssh.
+- `add` and `apply` make plain `ssh` work on the machine running frproxy: they install `cloudflared` the same way and
+  append a `Host … ProxyCommand cloudflared access ssh` block to `~/.ssh/config` for each SSH tunnel, unless ssh already
+  has a ProxyCommand or ProxyJump for it.
 - `./frproxy status` says per SSH tunnel whether `ssh` to it works from this machine, and why not.
 
 Hostnames are always full (`name.domain`), and the domains can be any zones in your Cloudflare account.
@@ -88,14 +85,19 @@ the old tunnel named `frproxy` is left behind and can be deleted in the Cloudfla
 - `./frproxy status`: zone, tunnel and per-tunnel DNS/ingress state
 - `./frproxy add :8080 wrong.example.com`: expose a port, `host:port` or URL (edits `config/frproxy.yml`, previous versions kept as numbered `frproxy.yml.N.bak`)
 - `./frproxy rm wrong.example.com`: stop exposing it
-- `./frproxy install`: link `frproxy` into ~/.local/bin and ask for the Cloudflare API token if there is none
+- `./frproxy install`: link `frproxy` into ~/.local/bin, ask for the Cloudflare API token if there is none, then start like `apply`
 - `./frproxy ssh [ssh args]`: ssh through an SSH tunnel from any machine, installing cloudflared first if needed
 - `./frproxy help`
 
-After `apply`, edits to `config/frproxy.yml` are picked up by the background daemon within seconds.
+After `install` or `apply`, edits to `config/frproxy.yml` are picked up by the background daemon within seconds.
 
 ## Pieces
 
+- `frproxy`: the wrapper. Runs the TypeScript in the `frproxy` container, passing this host's details (`FRPROXY_*`);
+  does only what must happen on the host itself: starting the stack, keeping it up across reboots (systemd), exec'ing
+  ssh and opening a browser.
+- `src/host.ts`: sets up this machine through the mounts in `compose.yaml` (`~/.local/bin`, `~/.ssh`): the `frproxy` link,
+  the token prompt, the `cloudflared` download and `~/.ssh/config`.
 - `src/config.ts`: owns `config/frproxy.yml` (validation, load, save with numbered backups, `add`, `rm`). The file is the only
   thing shared with the daemon, so hand edits and `./frproxy add` behave identically.
 - `src/daemon.ts`: the Cloudflare work (zones, tunnel, ingress, CNAMEs), the sync loop and the command table. It only reads the config.
@@ -106,7 +108,7 @@ After `apply`, edits to `config/frproxy.yml` are picked up by the background dae
 
 - Cloudflare's proxy sees all traffic in plaintext. One label below the zone only (`a.domain`, not `a.b.domain`).
 - Works with docker compose, podman-compose and rootless podman (the wrapper picks whichever it finds; set `FRPROXY_COMPOSE`
-  to force one). In rootless podman the container's `root` is just your user, so files in `config/` stay yours. To have the
-  stack start at boot, `apply` enables `podman-restart.service` and linger for your user (podman ignores
+  to force one). In rootless podman the container's `root` is just your user, so files frproxy writes (`config/`,
+  `~/.ssh/config`, `~/.local/bin`) stay yours. To have the stack start at boot, `install` and `apply` enable `podman-restart.service` and linger for your user (podman ignores
   `restart: unless-stopped` across reboots otherwise).
 - The API token lives in `config/.secrets.yml`; scope it as above and revoke it if it leaks.

@@ -9,15 +9,15 @@ services:
     restart: unless-stopped
     logging: *logging
     command: ["bun", "/app/daemon.ts"]
+    # This host, as the ./frproxy script describes it (src/host.ts sets the host up through these and the mounts below).
+    environment: [FRPROXY_HOSTNAME, FRPROXY_DIR, FRPROXY_BIN, FRPROXY_OS, FRPROXY_ARCH, FRPROXY_PATH]
     volumes:
       - state:/state
       - ./src:/app:ro,z
       - ./config:/config:z
-      - type: bind # names this machine's tunnel (frproxy-<hostname>); `name:` in the config overrides it
-        source: /etc/hostname
-        target: /host/hostname
-        read_only: true
-        bind: {create_host_path: false}
+      - ./compose.yaml:/host/compose.yaml:ro,z # pins the cloudflared version that frproxy ssh downloads
+      - ${FRPROXY_BIN}:${FRPROXY_BIN}          # same path inside, so paths written there are valid on the host
+      - ${HOME}/.ssh:/host/ssh
 
   cloudflared:
     image: docker.io/cloudflare/cloudflared:2026.10.0

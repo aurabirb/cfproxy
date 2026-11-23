@@ -1,121 +1,22 @@
 #!/bin/sh
-caller=$PWD # `frproxy ssh` returns here, so relative paths in ssh arguments (-i ./key) still work
-cd "$(dirname "$(readlink -f "$0")")"
-here=$(pwd)
-bin=${XDG_BIN_HOME:-$HOME/.local/bin}
+# Runs frproxy (src/*.ts) in its container. Only what has to happen on the host itself is here: starting the stack and
+# keeping it up across reboots, exec'ing ssh, and opening a browser.
+caller=$PWD # `frproxy ssh` runs ssh from here, so relative paths in its arguments (-i ./key) work
+cd "$(dirname "$(readlink -f "$0")")" || exit
+# This host, for the container: compose.yaml passes these in and mounts $FRPROXY_BIN and ~/.ssh.
+export FRPROXY_HOSTNAME="$(uname -n)" FRPROXY_DIR="$PWD" FRPROXY_BIN="${XDG_BIN_HOME:-$HOME/.local/bin}" \
+  FRPROXY_OS="$(uname -s)" FRPROXY_ARCH="$(uname -m)" FRPROXY_PATH="$PATH"
+mkdir -p "$FRPROXY_BIN" && mkdir -pm 700 "$HOME/.ssh" || exit
 
-# --- SSH tunnels from this machine (host side: the containers cannot see ~/.ssh or install anything here) ---
-
-# Prints the cloudflared to use: one on PATH, else our own copy in $bin.
-cloudflared_path() { command -v cloudflared || { [ -x "$bin/cloudflared" ] && echo "$bin/cloudflared"; }; }
-
-# Prints the cloudflared path, downloading the release compose.yaml pins into $bin first if there is none.
-install_cloudflared() {
-  cloudflared_path && return
-  version=$(sed -n 's|.*cloudflare/cloudflared:\([0-9][0-9.]*\).*|\1|p' compose.yaml)
-  case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) asset=cloudflared-linux-amd64 ;;
-    Linux-aarch64 | Linux-arm64) asset=cloudflared-linux-arm64 ;;
-    Linux-arm*) asset=cloudflared-linux-arm ;;
-    Linux-i?86) asset=cloudflared-linux-386 ;;
-    Darwin-x86_64) asset=cloudflared-darwin-amd64.tgz ;;
-    Darwin-arm64) asset=cloudflared-darwin-arm64.tgz ;;
-    *) echo "frproxy: no cloudflared download for $(uname -sm); install it yourself:" \
-      "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/" >&2; return 1 ;;
-  esac
-  url=https://github.com/cloudflare/cloudflared/releases/download/$version/$asset
-  echo "frproxy: installing cloudflared $version to $bin/cloudflared" >&2
-  tmp=$(mktemp -d) && mkdir -p "$bin" || return 1
-  if command -v curl >/dev/null; then curl -fsSL "$url" -o "$tmp/$asset"; else wget -qO "$tmp/$asset" "$url"; fi &&
-    case $asset in *.tgz) tar -xzf "$tmp/$asset" -C "$tmp" ;; *) mv "$tmp/$asset" "$tmp/cloudflared" ;; esac &&
-    chmod +x "$tmp/cloudflared" && mv "$tmp/cloudflared" "$bin/cloudflared"
-  ok=$?
-  rm -rf "$tmp"
-  [ $ok = 0 ] || { echo "frproxy: could not download $url" >&2; return 1; }
-  echo "$bin/cloudflared"
-}
-
-# What plain `ssh <host>` does here, from ssh's own resolved config (so Include and wildcard blocks count).
-ssh_proxy() { ssh -G "$1" 2>/dev/null | sed -n -e 's/^proxycommand //p' -e 's/^proxyjump //p' | head -1; }
-
-# Why `ssh <host>` will not work from this machine; prints nothing when it will.
-ssh_problems() {
-  problems=
-  cloudflared_path >/dev/null || problems="cloudflared is not installed"
-  case $(ssh_proxy "$1") in
-    *cloudflared*) ;;
-    "") problems="${problems:+$problems; }~/.ssh/config has no ProxyCommand for it" ;;
-    *) problems="${problems:+$problems; }~/.ssh/config sends it through another proxy" ;;
-  esac
-  echo "$problems"
-}
-
-# Makes plain `ssh <host>` work here: installs cloudflared and adds a ProxyCommand block unless ssh already has one.
-setup_ssh_host() {
-  case $(ssh_proxy "$1") in
-    *cloudflared*) cloudflared_path >/dev/null || install_cloudflared >/dev/null; return ;;
-    ?*) echo "frproxy: $1 already has a ProxyCommand/ProxyJump in ~/.ssh/config; left it alone" >&2; return ;;
-  esac
-  cf=$(install_cloudflared) || return 0
-  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" && touch "$HOME/.ssh/config" && chmod 600 "$HOME/.ssh/config" || return 0
-  # A file without a trailing newline would glue our Host line onto its last line.
-  [ -s "$HOME/.ssh/config" ] && [ "$(tail -c1 "$HOME/.ssh/config")" != "" ] && echo >>"$HOME/.ssh/config"
-  printf '\n# added by frproxy: %s is an SSH tunnel through Cloudflare\nHost %s\n  ProxyCommand %s access ssh --hostname %%h\n' \
-    "$1" "$1" "$cf" >>"$HOME/.ssh/config"
-  echo "frproxy: added $1 to ~/.ssh/config, so plain ssh to it works from this machine"
-}
-
-# ./frproxy ssh [ssh args]: for clients. Needs no containers or config, only this script and compose.yaml.
+# ./frproxy ssh [ssh args]: cloudflared carries ssh through the tunnel. Checked here first so that, once it is
+# installed, ssh starts without a container.
 if [ "$1" = ssh ]; then
   shift
-  [ $# -gt 0 ] || { echo "usage: frproxy ssh [ssh options] [user@]hostname [command]" >&2; exit 1; }
-  cf=$(install_cloudflared) || exit 1
-  cd "$caller" || exit 1
-  # -o beats ~/.ssh/config, so this works whether or not the host is set up there.
-  exec ssh -o "ProxyCommand=$cf access ssh --hostname %h" "$@"
+  cloudflared=$FRPROXY_BIN/cloudflared
+  [ -x "$cloudflared" ] || "$FRPROXY_DIR/frproxy" cloudflared >/dev/null || exit
+  cd "$caller" && exec ssh -o "ProxyCommand=$cloudflared access ssh --hostname %h" "$@"
 fi
 
-# --- the Cloudflare token (host side too: install runs on machines without docker or podman) ---
-
-secrets=config/.secrets.yml
-has_token() { [ -n "$(sed -n 's/^[[:space:]]*api_token:[[:space:]]*//p' "$secrets" 2>/dev/null)" ]; }
-
-# Asks for the token until Cloudflare accepts it, then writes $secrets. Skippable: clients that only use
-# `frproxy ssh` need no token.
-ask_token() {
-  has_token && return
-  if [ ! -t 0 ]; then echo "frproxy: no Cloudflare API token yet; run ./frproxy install in a terminal to enter it"; return; fi
-  echo
-  echo "Serving tunnels from this machine needs a Cloudflare API token (machines that only use frproxy ssh do not)."
-  sed '/^    4\./,$d' src/token-help.txt # step 4 says to run install, which is what is running
-  trap 'stty echo; echo; exit 130' INT
-  while :; do
-    printf 'Paste the token (hidden; Enter to skip): '
-    stty -echo; IFS= read -r token; stty echo; echo
-    [ -n "$token" ] || { echo "skipped; ./frproxy install asks again"; break; }
-    case $token in *[!A-Za-z0-9_-]*) echo "that does not look like a Cloudflare token; try again"; continue ;; esac
-    # Cloudflare's own check; without curl the token is saved unchecked and the first plan reports a bad one.
-    if command -v curl >/dev/null &&
-      ! curl -fsS -o /dev/null -H "Authorization: Bearer $token" https://api.cloudflare.com/client/v4/user/tokens/verify 2>/dev/null; then
-      echo "Cloudflare does not accept that token; try again"; continue
-    fi
-    (umask 077 && sed "s|^\([[:space:]]*api_token:\).*|\1 $token|" config/.secrets.yml.example >"$secrets.tmp") &&
-      mv "$secrets.tmp" "$secrets" && echo "saved to $secrets"
-    break
-  done
-  trap - INT
-}
-
-# ./frproxy install: link this checkout into ~/.local/bin so `frproxy` works from any directory, then ask for the
-# Cloudflare token if there is none yet.
-if [ "$1" = install ] && [ $# = 1 ]; then
-  mkdir -p "$bin" && ln -sf "$here/frproxy" "$bin/frproxy" && echo "linked $bin/frproxy -> $here/frproxy"
-  case ":$PATH:" in *":$bin:"*) ;; *) echo "$bin is not in your PATH; add it:"
-    echo "  fish:      fish_add_path $bin"
-    echo "  bash/zsh:  echo 'export PATH=\"$bin:\$PATH\"' >> ~/.profile" ;; esac
-  ask_token
-  exit
-fi
 # Works with docker compose, podman-compose or `podman compose` (rootless included); FRPROXY_COMPOSE overrides.
 if [ -n "$FRPROXY_COMPOSE" ]; then compose=$FRPROXY_COMPOSE
 elif docker compose version >/dev/null 2>&1; then compose="docker compose"
@@ -128,19 +29,6 @@ if [ -t 0 ]; then notty=; else notty=-T; fi
 # otherwise fall back to a throwaway one. ./src is bind-mounted, so exec still runs the current code.
 if $compose exec -T frproxy true >/dev/null 2>&1; then run="$compose exec"; else run="$compose run --rm"; fi
 daemon() { $run $notty frproxy bun /app/daemon.ts "$@"; }
-
-# The foreground loop (`run`) belongs to the background container: started from here, Ctrl-C would leave it running
-# next to the real daemon. So `run` means apply here.
-# ./frproxy buy <domain>: the browser opens from here (the container has none); the container checks the price and waits.
-if [ "$1" = buy ] && [ $# = 2 ]; then
-  # -T: no pty, so the captured URL has no carriage return.
-  if url=$($run -T frproxy bun /app/daemon.ts buyurl "$2" 2>/dev/null); then
-    if command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1 &
-    elif command -v open >/dev/null; then open "$url" >/dev/null 2>&1 &
-    fi
-  fi
-  exec $run frproxy bun /app/daemon.ts buy "$2"
-fi
 
 # Podman ignores `restart: unless-stopped` across reboots: containers only come back if podman-restart.service is
 # enabled, and for rootless podman the user manager must also run without a login session (linger).
@@ -158,25 +46,31 @@ survive_reboot() {
   } || echo "frproxy: linger not enabled; the tunnel will only start after you log in" >&2
 }
 
-# -T: no pty, so the hostnames carry no carriage return.
-ssh_hosts() { $run -T frproxy bun /app/daemon.ts sshhosts; }
+# Sync Cloudflare, then run the stack in the background, also after reboots.
+# --force-recreate: ./src is bind-mounted, so without it the daemon would keep running the code it started with.
+start() {
+  daemon apply && $compose up -d --force-recreate frproxy && $compose up -d && survive_reboot &&
+    echo "frproxy: running in the background, restarts after reboot (./frproxy status to check)"
+}
 
-[ $# = 0 ] && set -- help
-if [ $# = 1 ] && { [ "$1" = apply ] || [ "$1" = run ]; }; then
-  # --force-recreate: ./src is bind-mounted, so without it the daemon would keep running the code it started with.
-  daemon apply && $compose up -d --force-recreate frproxy && $compose up -d && survive_reboot || exit
-  run="$compose exec" # the container is up now
-  for host in $(ssh_hosts); do setup_ssh_host "$host"; done
-  echo "frproxy: running in the background, restarts after reboot (./frproxy status to check)"
-elif [ $# = 1 ] && [ "$1" = status ]; then
-  daemon status
-  ok=$?
-  for host in $(ssh_hosts); do
-    problems=$(ssh_problems "$host")
-    [ -n "$problems" ] && problems="will not work: $problems (./frproxy apply fixes it, or use ./frproxy ssh)"
-    echo "ssh $host from this machine: ${problems:-ok}"
-  done
-  exit $ok
-else
-  daemon "$@"
-fi
+# These recreate the background container, so they must not run in it: it may predate the current compose.yaml.
+case "$#:$1" in 1:apply | 1:run | 1:install) run="$compose run --rm" ;; esac
+
+case "$#:$1" in
+  0:) daemon help ;;
+  # The foreground loop (`run`) belongs to the background container: started from here, Ctrl-C would leave it
+  # running next to the real daemon. So `run` means apply here.
+  1:apply | 1:run) start ;;
+  # Without a token (skipped: a machine that only uses frproxy ssh) there is nothing to serve, so nothing to start.
+  1:install) daemon install && if grep -qs '^ *api_token: *[^ ]' config/.secrets.yml; then start; fi ;;
+  # The browser opens from here (the container has none); the container checks the price and waits.
+  2:buy)
+    # -T: no pty, so the captured URL has no carriage return.
+    if url=$($run -T frproxy bun /app/daemon.ts buyurl "$2" 2>/dev/null); then
+      if command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1 &
+      elif command -v open >/dev/null; then open "$url" >/dev/null 2>&1 &
+      fi
+    fi
+    daemon buy "$2" ;;
+  *) daemon "$@" ;;
+esac

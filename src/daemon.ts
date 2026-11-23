@@ -1,13 +1,14 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecrets, clientHints, rm, serviceUrl, tunnelName, type Config } from "./config";
+import { API, CONFIG_PATH, SECRETS_PATH, Fail, add, fail, loadConfig, loadSecrets, clientHints, rm, serviceUrl, tunnelName, type Config } from "./config";
+import { TOKEN_STEPS, askToken, installCloudflared, link, setupSsh, sshHosts, sshProblems } from "./host";
 
-const API = "https://api.cloudflare.com/client/v4";
 const TOKEN_FILE = "/state/token";
 const OWN_PREFIX = "frproxy-";
 
-// Shared with the ./frproxy script, which prints it when `install` asks for the token.
-const TOKEN_HELP = `\n${readFileSync(new URL("./token-help.txt", import.meta.url), "utf8").trimEnd()}`;
+const TOKEN_HELP = `${TOKEN_STEPS}
+    4. Run ./frproxy install, which asks for it, or put it in config/.secrets.yml (see .secrets.yml.example);
+       it is re-read automatically.`;
 
 // --- Cloudflare API ---
 
@@ -174,6 +175,10 @@ async function status(config: Config) {
     const note = clientHints([host]).length ? " [client needs cloudflare]" : "";
     console.log(`https://${hostname} -> ${service}   dns: ${dns}, ingress: ${route}${note}`);
   }
+  for (const host of sshHosts()) {
+    const problems = sshProblems(host);
+    console.log(`ssh ${host} from this machine: ${problems ? `will not work: ${problems} (./frproxy apply fixes it, or use ./frproxy ssh)` : "ok"}`);
+  }
 }
 
 // --- buying a domain ---
@@ -263,6 +268,7 @@ async function run() {
 async function apply() {
   const config = loadConfig();
   const waiting = await reconcile(config, true);
+  await setupSsh();
   console.log(waiting ? "waiting on nameservers; the background daemon keeps checking and finishes setup once the zone is active" : "everything is in order");
 }
 
@@ -275,11 +281,11 @@ const commands: Record<string, Command> = {
   buyurl: { args: "<domain>", desc: "print the Cloudflare purchase URL for <domain> (used by buy)", run: buyLink },
   buy: { args: "<domain>", desc: "open Cloudflare Registrar to buy <domain>, then wait until it is in your account", run: buy },
   status: { args: "", desc: "show zone, tunnel and per-tunnel state", run: () => status(loadConfig()) },
-  add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>", run: add },
+  add: { args: "<addr> <hostname>", desc: "expose :PORT, HOST:PORT or a URL at https://<hostname>", run: async (args) => (await add(args), setupSsh()) },
   rm: { args: "<hostname>", desc: "stop exposing <hostname>", run: rm },
-  sshhosts: { args: "", desc: "print the hostnames that are SSH tunnels (used by apply and status)", run: () => { for (const [host, addr] of Object.entries(loadConfig().tunnels)) if (serviceUrl(addr).startsWith("ssh://")) console.log(host); } },
-  ssh: { args: "<ssh args...>", desc: "ssh through a tunnel from any machine: installs cloudflared if needed, passes the rest to ssh", run: () => fail("ssh runs from the ./frproxy script on the host, not inside the container") },
-  install: { args: "", desc: "link frproxy into ~/.local/bin and ask for the Cloudflare API token if there is none", run: () => fail("install runs from the ./frproxy script on the host, not inside the container") },
+  install: { args: "", desc: "link frproxy into ~/.local/bin, ask for the Cloudflare API token, then start like apply", run: async () => (link(), askToken()) },
+  ssh: { args: "<ssh args...>", desc: "ssh through a tunnel from any machine: fetches cloudflared if needed, passes the rest to ssh", run: () => fail("ssh runs from the ./frproxy script on the host") },
+  cloudflared: { args: "", desc: "install cloudflared into ~/.local/bin if needed and print its path (used by ssh)", run: async () => console.log(await installCloudflared()) },
   help: { args: "", desc: "show this help", run: () => console.log(usage()) },
 };
 
